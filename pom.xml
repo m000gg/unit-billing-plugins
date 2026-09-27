@@ -65,13 +65,6 @@
         </dependency>
     </dependencies>
 
-    <!-- ===================== SHARED VERSION MANAGEMENT ===================== -->
-    <!-- Pin versions of third-party SDKs here once plugin modules need them, so every
-         module resolves the same version without repeating it in each child pom.xml. -->
-    <dependencyManagement>
-        <dependencies>
-        </dependencies>
-    </dependencyManagement>
 
     <build>
         <pluginManagement>
