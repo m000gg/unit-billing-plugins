@@ -35,16 +35,16 @@ public class EmailSender {
         }
     }
 
-    public void send(String to, String subject, String body) throws MessagingException {
+    public void send(BalanceNotificationEmailMessage emailMessage) throws MessagingException {
         ClassLoader original = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(EmailSender.class.getClassLoader());
         try {
             Session session = Session.getInstance(props, authenticator);
             MimeMessage message = new MimeMessage(session);
             message.setFrom(new InternetAddress(from));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
-            message.setSubject(subject, "UTF-8");
-            message.setText(body, "UTF-8");
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailMessage.to()));
+            message.setSubject(emailMessage.subject(), "UTF-8");
+            message.setText(emailMessage.body(), "UTF-8");
             Transport.send(message);
         } finally {
             Thread.currentThread().setContextClassLoader(original);
