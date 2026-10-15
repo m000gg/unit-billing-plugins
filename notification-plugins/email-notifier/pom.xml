@@ -27,20 +27,27 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>analytics-dashboard</artifactId>
-    <packaging>jar</packaging>
-
-    <name>analytics-dashboard</name>
-    <description>Analytics dashboard plugin for Unit Billing</description>
+    <artifactId>email-notifier</artifactId>
+    <name>email-notifier</name>
+    <description>Unit Billing plugin: balance change notifications by email</description>
 
     <dependencies>
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+            <version>2.0.5</version>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Packs the plugin's own libraries into the jar. plugin-api is "provided", so it stays out. -->
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <configuration>
+                    <createDependencyReducedPom>false</createDependencyReducedPom>
+                </configuration>
             </plugin>
         </plugins>
     </build>
