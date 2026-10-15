@@ -30,6 +30,7 @@ public final class EmailNotifierPlugin implements Plugin {
                         }
                         String sendTo = contact.get().email();
                         BalanceNotificationEmailMessage message = balanceNotificationMessageFormatter.formNewEmailMessage(sendTo, event.balanceChangeType(),  event.balanceAfterTransaction(), event.amountInUserCurrency(), event.userCurrency());
+                        sender.send(message);
                     } catch (Exception e) {
                         System.err.println("[email-notifier] failed to send email: " + e);
                     }
