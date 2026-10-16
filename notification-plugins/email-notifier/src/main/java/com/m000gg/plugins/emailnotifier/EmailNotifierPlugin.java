@@ -2,6 +2,9 @@ package com.m000gg.plugins.emailnotifier;
 
 import com.m000gg.plugin.api.Plugin;
 import com.m000gg.plugin.api.PluginContext;
+import com.m000gg.plugin.api.query.user.UserContact;
+
+import java.util.Optional;
 
 
 public final class EmailNotifierPlugin implements Plugin {
@@ -13,15 +16,25 @@ public final class EmailNotifierPlugin implements Plugin {
 
     @Override
     public void onEnable(PluginContext context) {
-        context.onBalanceChanged(event ->
-                System.out.printf(
-                        "[email-notifier] Balance changed: user=%s, type=%s, amount=%s %s%n",
-                        event.userId(),
-                        event.balanceChangeType(),
-                        event.amountInUserCurrency(),
-                        event.userCurrency()
-                )
-        );
+        SMTPServerConfiguration smtpConfig =
+                SMTPServerConfiguration.from(context);
+
+        EmailSender sender = new EmailSender(smtpConfig);
+
+        BalanceNotificationMessageFormatter balanceNotificationMessageFormatter = new BalanceNotificationMessageFormatter();
+        context.onBalanceChanged(event -> {
+                    try {
+                        Optional<UserContact> contact = context.users().findContact(event.userId());
+                        if (contact.isEmpty()) {
+                            return;
+                        }
+                        String sendTo = contact.get().email();
+                        BalanceNotificationEmailMessage message = balanceNotificationMessageFormatter.formNewEmailMessage(sendTo, event.balanceChangeType(),  event.balanceAfterTransaction(), event.amountInUserCurrency(), event.userCurrency());
+                        sender.send(message);
+                    } catch (Exception e) {
+                        System.err.println("[email-notifier] failed to send email: " + e);
+                    }
+                });
     }
 
     @Override
