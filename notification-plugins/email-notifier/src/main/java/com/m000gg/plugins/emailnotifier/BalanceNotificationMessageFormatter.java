@@ -32,7 +32,8 @@ public class BalanceNotificationMessageFormatter {
             Amount: %s %s
             Balance after transaction: %s %s
 
-            If you have questions about this transaction, please contact support.
+            If you have questions about this transaction, please contact support,
+            Your Unit Billing Team
             """.formatted(
                 operation,
                 amountInUserCurrency.toPlainString(),
