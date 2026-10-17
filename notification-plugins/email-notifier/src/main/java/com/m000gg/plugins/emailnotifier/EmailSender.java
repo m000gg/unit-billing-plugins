@@ -16,14 +16,17 @@ public class EmailSender {
         this.from = smtpServerConfiguration.from();
 
         props.put("mail.smtp.host", smtpServerConfiguration.host());
-        props.put("mail.smtp.port", String.valueOf(smtpServerConfiguration.portValue()));
+        props.put("mail.smtp.port", String.valueOf(smtpServerConfiguration.port()));
+        props.put("mail.smtp.starttls.enable",
+                String.valueOf(smtpServerConfiguration.startTlsEnabled()));
+        props.put("mail.smtp.starttls.required",
+                String.valueOf(smtpServerConfiguration.startTlsEnabled()));
         props.put("mail.smtp.connectiontimeout", "5000");
         props.put("mail.smtp.timeout", "5000");
         props.put("mail.smtp.writetimeout", "5000");
 
         if (smtpServerConfiguration.username() != null) {
             props.put("mail.smtp.auth", "true");
-            props.put("mail.smtp.starttls.enable", "true");
             this.authenticator = new Authenticator() {
                 @Override
                 protected PasswordAuthentication getPasswordAuthentication() {
@@ -31,6 +34,7 @@ public class EmailSender {
                 }
             };
         } else {
+            props.put("mail.smtp.auth", "false");
             this.authenticator = null;
         }
     }
