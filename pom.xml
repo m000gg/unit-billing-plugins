@@ -35,10 +35,6 @@
     <name>unit-billing-plugins</name>
     <description>Official plugins for the Unit Billing platform</description>
 
-    <modules>
-        <module>notification-plugins/email-notifier</module>
-    </modules>
-
     <properties>
         <java.version>25</java.version>
         <plugin-api.version>0.1.0</plugin-api.version>
