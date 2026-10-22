@@ -40,6 +40,10 @@
         <plugin-api.version>0.1.0</plugin-api.version>
     </properties>
 
+    <modules>
+        <module>notification-plugins/email-notifier</module>
+    </modules>
+
     <!-- ===================== SHARED DEPENDENCIES ===================== -->
     <!-- Common to every plugin module. Module-specific libraries (Telegram Bots API,
          mail, payment SDKs) belong in each plugin's own pom.xml, not here. -->
