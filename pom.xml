@@ -33,28 +33,32 @@
     <packaging>pom</packaging>
 
     <name>unit-billing-plugins</name>
-    <description>Plugin ecosystem for the Unit Billing platform — payment gateways, notifications, analytics, and other integrations</description>
-
-    <modules>
-        <module>analytics-plugins/analytics-dashboard</module>
-    </modules>
+    <description>Official plugins for the Unit Billing platform</description>
 
     <properties>
         <java.version>25</java.version>
+        <plugin-api.version>0.1.0</plugin-api.version>
     </properties>
 
+    <modules>
+        <module>notification-plugins/email-notifier</module>
+    </modules>
+
     <!-- ===================== SHARED DEPENDENCIES ===================== -->
-    <!-- Common to every plugin module; module-specific dependencies (Stripe/PayPal SDKs, Telegram Bots API, etc.)
-         belong in each plugin's own pom.xml, not here. -->
+    <!-- Common to every plugin module. Module-specific libraries (Telegram Bots API,
+         mail, payment SDKs) belong in each plugin's own pom.xml, not here. -->
     <dependencies>
+        <!-- Plugin contract: supplied by the application at runtime, NOT packaged into the plugin jar -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
+            <groupId>com.m000gg</groupId>
+            <artifactId>unit-billing-plugin-api</artifactId>
+            <version>${plugin-api.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
 
         <!-- ===================== TESTING ===================== -->
@@ -63,15 +67,23 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
 
     <build>
         <pluginManagement>
             <plugins>
+                <!-- Plugins are plain jars with their own libraries inside (no Spring Boot repackaging).
+                     Enable it only in modules that produce a plugin jar, not in group modules. -->
                 <plugin>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
                 </plugin>
             </plugins>
         </pluginManagement>
