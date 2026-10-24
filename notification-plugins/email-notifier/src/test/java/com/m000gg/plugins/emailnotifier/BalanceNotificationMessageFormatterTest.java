@@ -25,15 +25,19 @@ class BalanceNotificationMessageFormatterTest {
                         new BigDecimal("50.00"),
                         "Monthly deposit",
                         "EUR",
-                        Instant.parse("2026-10-15T09:30:00Z")
+                        Instant.parse("2026-10-15T09:30:00Z"),
+                        "en"
                 );
 
         assertEquals("user@example.com", message.to());
-        assertEquals("Balance update: Top-up", message.subject());
+        assertEquals(
+                "Your balance has been updated - Top-up",
+                message.subject()
+        );
 
         assertAll(
                 () -> assertTrue(message.body().contains("Top-up")),
-                () -> assertTrue(message.body().contains("increase")),
+                () -> assertTrue(message.body().contains("Increase")),
                 () -> assertTrue(message.body().contains("50.00 EUR")),
                 () -> assertTrue(message.body().contains("150.00 EUR")),
                 () -> assertTrue(message.body().contains("Monthly deposit")),
@@ -52,13 +56,21 @@ class BalanceNotificationMessageFormatterTest {
                         new BigDecimal("10.00"),
                         "Service charge",
                         "EUR",
-                        Instant.parse("2026-10-15T09:30:00Z")
+                        Instant.parse("2026-10-15T09:30:00Z"),
+                        "en"
                 );
 
-        assertTrue(message.subject().contains("Charge"));
-        assertTrue(message.body().contains("decrease"));
-        assertTrue(message.body().contains("Service charge"));
-        assertTrue(message.body().contains("10.00 EUR"));
-        assertTrue(message.body().contains("90.00 EUR"));
+        assertEquals(
+                "Your balance has been updated - Charge",
+                message.subject()
+        );
+
+        assertAll(
+                () -> assertTrue(message.body().contains("Charge")),
+                () -> assertTrue(message.body().contains("Decrease")),
+                () -> assertTrue(message.body().contains("Service charge")),
+                () -> assertTrue(message.body().contains("10.00 EUR")),
+                () -> assertTrue(message.body().contains("90.00 EUR"))
+        );
     }
 }
