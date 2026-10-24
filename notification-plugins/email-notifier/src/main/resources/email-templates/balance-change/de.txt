@@ -1,0 +1,17 @@
+Hallo,
+
+Ihr Unit Billing-Guthaben wurde aktualisiert.
+
+TRANSAKTIONSDETAILS
+------------------
+Typ:              %s
+Richtung:         %s
+Beschreibung:     %s
+Betrag:           %s %s
+Neues Guthaben:   %s %s
+Datum:            %s
+
+Wenn Sie Fragen zu dieser Transaktion haben, wenden Sie sich bitte an unser Support-Team.
+
+Mit freundlichen Grüßen
+Ihr Unit Billing-Team

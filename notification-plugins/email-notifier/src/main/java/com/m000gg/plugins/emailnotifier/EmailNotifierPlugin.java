@@ -56,7 +56,8 @@ public final class EmailNotifierPlugin implements Plugin {
                                 event.amountInUserCurrency(),
                                 event.description(),
                                 event.userCurrency(),
-                                event.transactionTime()
+                                event.transactionTime(),
+                                contact.get().preferredUserLanguage()
                         );
 
                 sender.send(message);
