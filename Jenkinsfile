@@ -9,7 +9,7 @@ node {
 pipeline {
     agent {
         docker {
-            image 'maven:3.9.9-eclipse-temurin-21'
+            image 'maven:3.10.0-sapmachine-25'
             args "--user 0:0 -v /var/run/docker.sock:/var/run/docker.sock --group-add ${dockerGid} -v maven-repository:/root/.m2"
         }
     }
@@ -29,24 +29,38 @@ pipeline {
     }
 
     stages {
+        stage('Prepare API Dependency') {
+            steps {
+                echo '=== Building and installing unit-billing-plugin-api ==='
+                sh '''#!/usr/bin/env bash
+                    set -euo pipefail
+                    rm -rf /tmp/unit-billing
+                    git clone --depth 1 https://github.com/m000gg/unit-billing.git /tmp/unit-billing
+                    cd /tmp/unit-billing/unit-billing-plugin-api
+                    mvn clean install -DskipTests $MAVEN_ARGS
+                    rm -rf /tmp/unit-billing
+                '''
+            }
+        }
+
         stage('Build') {
             steps {
                 echo '=== Compiling unit-billing-plugins (all modules) ==='
-                sh 'mvn clean compile'
+                sh 'mvn clean compile $MAVEN_ARGS'
             }
         }
 
         stage('Test') {
             steps {
                 echo '=== Running unit tests (all modules) ==='
-                sh 'mvn test'
+                sh 'mvn test $MAVEN_ARGS'
             }
         }
 
         stage('Package') {
             steps {
                 echo '=== Packaging all plugins ==='
-                sh 'mvn package -DskipTests'
+                sh 'mvn package -DskipTests $MAVEN_ARGS'
 
                 echo '=== Collecting plugin JARs ==='
                 sh '''#!/usr/bin/env bash
@@ -157,7 +171,6 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
                     exit 1
                 fi
 
-              
                 set -a
                 source "$env_file"
                 set +a
@@ -169,7 +182,6 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
                     exit 1
                 fi
 
-           
                 if [[ "$plugin_dir" != /* ]]; then
                     plugin_dir="/opt/$service_name/$plugin_dir"
                 fi
