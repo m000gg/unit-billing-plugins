@@ -248,7 +248,7 @@ EOF
                     -o UserKnownHostsFile="$KNOWN_HOSTS" \
                     -o StrictHostKeyChecking=yes \
                     "$DEPLOY_HOST" \
-                    "sudo bash '$remote_script' '$remote_archive' '$env_file' '$SERVICE_NAME'; status=\$?; rm -f '$remote_script'; exit \$status"
+                    "sudo bash '$remote_script' '$remote_archive' '$env_file' '$SERVICE_NAME' && rm -f '$remote_script'"
             '''
         }
     }
