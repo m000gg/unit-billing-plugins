@@ -169,75 +169,86 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
 
                 archive="${WORKSPACE}/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
                 remote_archive="/tmp/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
+                remote_script="/tmp/deploy_script_${BUILD_NUMBER}.sh"
                 env_file="/opt/${SERVICE_NAME}/.env"
 
                 tar -czf "$archive" -C "$PLUGIN_OUTPUT_DIR" .
+
+                cat << 'EOF' > "${WORKSPACE}/remote_deploy.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+
+archive="$1"
+env_file="$2"
+service_name="$3"
+
+if [[ ! -f "$env_file" ]]; then
+    echo "Environment file not found: $env_file"
+    exit 1
+fi
+
+set -a
+source "$env_file"
+set +a
+
+plugin_dir="${PLUGIN_DIR:-${UNITBILLING_CONFIGURATION_PLUGINS_DIRECTORY:-}}"
+
+if [[ -z "$plugin_dir" ]]; then
+    echo "Plugin directory is missing from $env_file"
+    exit 1
+fi
+
+if [[ "$plugin_dir" != /* ]]; then
+    plugin_dir="/opt/$service_name/$plugin_dir"
+fi
+
+staging_dir="$(mktemp -d)"
+trap 'rm -rf "$staging_dir"; rm -f "$archive"' EXIT
+
+tar -xzf "$archive" -C "$staging_dir"
+
+shopt -s nullglob
+plugin_jars=("$staging_dir"/*.jar)
+
+if ((${#plugin_jars[@]} == 0)); then
+    echo "No plugin JAR files found in deployment archive."
+    exit 1
+fi
+
+echo "Deploying ${#plugin_jars[@]} plugin JAR(s) to $plugin_dir"
+
+systemctl stop "$service_name"
+mkdir -p "$plugin_dir"
+
+install \
+    -o unitbilling \
+    -g unitbilling \
+    -m 0644 \
+    "${plugin_jars[@]}" \
+    "$plugin_dir/"
+
+systemctl start "$service_name"
+systemctl status "$service_name" --no-pager
+EOF
 
                 scp \
                     -o UserKnownHostsFile="$KNOWN_HOSTS" \
                     -o StrictHostKeyChecking=yes \
                     "$archive" \
+                    "${WORKSPACE}/remote_deploy.sh" \
                     "$DEPLOY_HOST:$remote_archive"
+
+                scp \
+                    -o UserKnownHostsFile="$KNOWN_HOSTS" \
+                    -o StrictHostKeyChecking=yes \
+                    "${WORKSPACE}/remote_deploy.sh" \
+                    "$DEPLOY_HOST:$remote_script"
 
                 ssh \
                     -o UserKnownHostsFile="$KNOWN_HOSTS" \
                     -o StrictHostKeyChecking=yes \
                     "$DEPLOY_HOST" \
-                    "sudo bash -s -- '$remote_archive' '$env_file' '$SERVICE_NAME'" <<'REMOTE_SCRIPT'
-                set -euo pipefail
-
-                archive="$1"
-                env_file="$2"
-                service_name="$3"
-
-                if [[ ! -f "$env_file" ]]; then
-                    echo "Environment file not found: $env_file"
-                    exit 1
-                fi
-
-                set -a
-                source "$env_file"
-                set +a
-
-                plugin_dir="${PLUGIN_DIR:-${UNITBILLING_CONFIGURATION_PLUGINS_DIRECTORY:-}}"
-
-                if [[ -z "$plugin_dir" ]]; then
-                    echo "Plugin directory is missing from $env_file"
-                    exit 1
-                fi
-
-                if [[ "$plugin_dir" != /* ]]; then
-                    plugin_dir="/opt/$service_name/$plugin_dir"
-                fi
-
-                staging_dir="$(mktemp -d)"
-                trap 'rm -rf "$staging_dir"; rm -f "$archive"' EXIT
-
-                tar -xzf "$archive" -C "$staging_dir"
-
-                shopt -s nullglob
-                plugin_jars=("$staging_dir"/*.jar)
-
-                if ((${#plugin_jars[@]} == 0)); then
-                    echo "No plugin JAR files found in deployment archive."
-                    exit 1
-                fi
-
-                echo "Deploying ${#plugin_jars[@]} plugin JAR(s) to $plugin_dir"
-
-                systemctl stop "$service_name"
-                mkdir -p "$plugin_dir"
-
-                install \
-                    -o unitbilling \
-                    -g unitbilling \
-                    -m 0644 \
-                    "${plugin_jars[@]}" \
-                    "$plugin_dir/"
-
-                systemctl start "$service_name"
-                systemctl status "$service_name" --no-pager
-        REMOTE_SCRIPT
+                    "sudo bash '$remote_script' '$remote_archive' '$env_file' '$SERVICE_NAME'; status=\$?; rm -f '$remote_script'; exit \$status"
             '''
         }
     }
