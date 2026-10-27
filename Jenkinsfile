@@ -237,7 +237,7 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
 
                 systemctl start "$service_name"
                 systemctl status "$service_name" --no-pager
-                REMOTE_SCRIPT
+        REMOTE_SCRIPT
             '''
         }
     }
