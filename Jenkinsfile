@@ -20,6 +20,11 @@ pipeline {
                 choices: ['NONE', 'TEST', 'PROD'],
                 description: 'Deployment target. Select NONE to build, test, and package without deploying.'
         )
+        string(
+                name: 'API_BRANCH',
+                defaultValue: 'develop',
+                description: 'Branch of unit-billing repository to fetch unit-billing-plugin-api from.'
+        )
     }
 
     environment {
@@ -30,14 +35,20 @@ pipeline {
 
     stages {
         stage('Prepare API Dependency') {
+            environment {
+                API_BRANCH_NAME = "${params.API_BRANCH}"
+            }
             steps {
-                echo '=== Building and installing unit-billing-plugin-api ==='
+                echo "=== Building and installing unit-billing-plugin-api from branch: ${params.API_BRANCH} ==="
                 sh '''#!/usr/bin/env bash
                     set -euo pipefail
+
                     rm -rf /tmp/unit-billing
-                    git clone --depth 1 https://github.com/m000gg/unit-billing.git /tmp/unit-billing
+
+                    git clone --depth 1 -b "$API_BRANCH_NAME" https://github.com/m000gg/unit-billing.git /tmp/unit-billing
                     cd /tmp/unit-billing/unit-billing-plugin-api
-                    mvn clean install -DskipTests $MAVEN_ARGS
+                    mvn clean install -DskipTests
+
                     rm -rf /tmp/unit-billing
                 '''
             }
