@@ -39,15 +39,28 @@ pipeline {
                 API_BRANCH_NAME = "${params.API_BRANCH}"
             }
             steps {
-                echo "=== Building and installing unit-billing-plugin-api from branch: ${params.API_BRANCH} ==="
+                echo "=== Building and installing unit-billing-plugin-api ==="
                 sh '''#!/usr/bin/env bash
                     set -euo pipefail
 
                     rm -rf /tmp/unit-billing
+                    target_branch="${API_BRANCH_NAME:-develop}"
 
-                    git clone --depth 1 -b "$API_BRANCH_NAME" https://github.com/m000gg/unit-billing.git /tmp/unit-billing
-                    cd /tmp/unit-billing/unit-billing-plugin-api
-                    mvn clean install -DskipTests
+                    echo "Fetching unit-billing from branch: $target_branch"
+
+                    if ! git clone --depth 1 -b "$target_branch" https://github.com/m000gg/unit-billing.git /tmp/unit-billing 2>/dev/null; then
+                        echo "Branch '$target_branch' not found in unit-billing. Falling back to 'develop'..."
+                        git clone --depth 1 -b develop https://github.com/m000gg/unit-billing.git /tmp/unit-billing
+                    fi
+
+                    cd /tmp/unit-billing
+
+                    # 1. Устанавливаем корневой родительский POM (unit-billing:pom:0.1.0) без сборки остальных сервисов (-N)
+                    mvn clean install -N -DskipTests $MAVEN_ARGS
+
+                    # 2. Переходим в модуль API и устанавливаем его
+                    cd unit-billing-plugin-api
+                    mvn clean install -DskipTests $MAVEN_ARGS
 
                     rm -rf /tmp/unit-billing
                 '''
