@@ -169,7 +169,6 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
 
                 archive="${WORKSPACE}/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
                 remote_archive="/tmp/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
-                remote_script="/tmp/deploy_script_${BUILD_NUMBER}.sh"
                 env_file="/opt/${SERVICE_NAME}/.env"
 
                 tar -czf "$archive" -C "$PLUGIN_OUTPUT_DIR" .
