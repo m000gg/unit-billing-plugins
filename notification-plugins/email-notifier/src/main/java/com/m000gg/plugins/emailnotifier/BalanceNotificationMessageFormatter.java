@@ -3,12 +3,16 @@ package com.m000gg.plugins.emailnotifier;
 import com.m000gg.plugin.api.event.BalanceChangeDirection;
 import com.m000gg.plugin.api.event.BalanceChangeType;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.ResourceBundle;
 
 public class BalanceNotificationMessageFormatter {
 
@@ -24,55 +28,73 @@ public class BalanceNotificationMessageFormatter {
             BigDecimal amountInUserCurrency,
             String description,
             String userCurrency,
-            Instant transactionTime
+            Instant transactionTime,
+            String userPreferredLang
     ) {
-        String operation = switch (changeType) {
-            case TOP_UP -> "Top-up";
-            case CHARGE -> "Charge";
-            case CORRECTION -> "Balance correction";
-            case REFUND -> "Refund";
-        };
+        Locale locale = resolveLocale(userPreferredLang);
+        ResourceBundle messages = ResourceBundle.getBundle("i18n.email.messages", locale);
 
-        String directionLabel = direction.name()
-                .toLowerCase(Locale.ROOT)
-                .replace('_', ' ');
+        String operationKey = changeType.name().toLowerCase(Locale.ROOT);
+        String directionKey = direction.name().toLowerCase(Locale.ROOT);
+
+        String operation = messages.getString("operation." + operationKey);
+        String directionLabel = messages.getString("direction." + directionKey);
 
         String descriptionText = description == null || description.isBlank()
-                ? "Not provided"
+                ? messages.getString("description.not-provided")
                 : description.trim();
 
-        String transactionTimeText = TRANSACTION_TIME_FORMAT.format(transactionTime);
-        String subject = "Balance update: " + operation;
+        String transactionTimeText = TRANSACTION_TIME_FORMAT
+                .withLocale(locale)
+                .format(transactionTime);
 
-        String body = """
-                Hello,
-                
-                There has been an update to your Unit Billing balance.
-                
-                TRANSACTION DETAILS
-                ------------------
-                Type:        %s
-                Direction:   %s
-                Description: %s
-                Amount:      %s %s
-                New balance: %s %s
-                Date:        %s
-                
-                If you have questions about this transaction, please contact our support team.
-                
-                Best regards,
-                Unit Billing Team
-                """.formatted(
-                operation,
-                directionLabel,
-                descriptionText,
-                amountInUserCurrency.toPlainString(),
-                userCurrency,
-                balanceAfterTransaction.toPlainString(),
-                userCurrency,
-                transactionTimeText
-        );
+        String subject = messages.getString("subject").formatted(operation);
+
+        String body = loadBodyTemplate(locale.getLanguage())
+                .strip()
+                .formatted(
+                        operation,
+                        directionLabel,
+                        descriptionText,
+                        amountInUserCurrency.toPlainString(),
+                        userCurrency,
+                        balanceAfterTransaction.toPlainString(),
+                        userCurrency,
+                        transactionTimeText
+                );
 
         return new BalanceNotificationEmailMessage(subject, body, to);
+    }
+
+    private Locale resolveLocale(String preferredLanguage) {
+        String language = preferredLanguage == null
+                ? ""
+                : Locale.forLanguageTag(preferredLanguage.trim()).getLanguage();
+
+        return switch (language) {
+            case "ru" -> Locale.forLanguageTag("ru");
+            case "uk" -> Locale.forLanguageTag("uk");
+            case "fr" -> Locale.FRENCH;
+            case "de" -> Locale.GERMAN;
+            default -> Locale.ENGLISH;
+        };
+    }
+
+    private String loadBodyTemplate(String language) {
+        String resourcePath = "/email-templates/balance-change/" + language + ".txt";
+
+        try (InputStream input = getClass().getResourceAsStream(resourcePath)) {
+            if (input != null) {
+                return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read email template: " + resourcePath, e);
+        }
+
+        if (!"en".equals(language)) {
+            return loadBodyTemplate("en");
+        }
+
+        throw new IllegalStateException("English email template is missing");
     }
 }
