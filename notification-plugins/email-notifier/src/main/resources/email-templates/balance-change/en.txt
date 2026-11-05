@@ -1,0 +1,17 @@
+Hello,
+
+There has been an update to your Unit Billing balance.
+
+TRANSACTION DETAILS
+------------------
+Type:        %s
+Direction:   %s
+Description: %s
+Amount:      %s %s
+New balance: %s %s
+Date:        %s
+
+If you have questions about this transaction, please contact our support team.
+
+Best regards,
+Unit Billing Team
