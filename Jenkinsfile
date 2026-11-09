@@ -29,32 +29,6 @@ pipeline {
     }
 
     stages {
-        stage('Prepare API Dependency') {
-            steps {
-                echo "=== Building and installing unit-billing-plugin-api ==="
-                sh '''#!/usr/bin/env bash
-                    set -euo pipefail
-
-                    # Версия API берётся из pom плагинов: <unit-billing.api.version>0.1.0</unit-billing.api.version>
-                    api_version="$(mvn -q -N help:evaluate -Dexpression=unit-billing.api.version -DforceStdout $MAVEN_ARGS)"
-                    echo "Fetching unit-billing at tag v$api_version"
-
-                    rm -rf /tmp/unit-billing
-                    git clone --depth 1 -b "v$api_version" https://github.com/m000gg/unit-billing.git /tmp/unit-billing
-
-                    cd /tmp/unit-billing
-
-                    # 1. Устанавливаем корневой родительский POM (unit-billing:pom:0.1.0) без сборки остальных сервисов (-N)
-                    mvn clean install -N -DskipTests $MAVEN_ARGS
-
-                    # 2. Переходим в модуль API и устанавливаем его
-                    cd unit-billing-plugin-api
-                    mvn clean install -DskipTests $MAVEN_ARGS
-
-                    rm -rf /tmp/unit-billing
-                '''
-            }
-        }
 
         stage('Build') {
             steps {
