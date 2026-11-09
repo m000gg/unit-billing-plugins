@@ -29,7 +29,6 @@ pipeline {
     }
 
     stages {
-
         stage('Build') {
             steps {
                 echo '=== Compiling unit-billing-plugins (all modules) ==='
