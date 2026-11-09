@@ -23,9 +23,9 @@ pipeline {
     }
 
     environment {
-        SERVICE_NAME        = 'unit-billing'
-        PLUGIN_OUTPUT_DIR   = 'dist/plugins'
-        MAVEN_ARGS          = "-Dmaven.repo.local=${WORKSPACE}/.m2/repository"
+        SERVICE_NAME = "unit-billing"
+        PLUGIN_DIR   = "/opt/${SERVICE_NAME}/plugins"
+        MAVEN_ARGS   = "-Dmaven.repo.local=${WORKSPACE}/.m2/repository"
     }
 
     stages {
@@ -47,41 +47,6 @@ pipeline {
             steps {
                 echo '=== Packaging all plugins ==='
                 sh 'mvn package -DskipTests $MAVEN_ARGS'
-
-                echo '=== Collecting plugin JARs ==='
-                sh '''#!/usr/bin/env bash
-                    set -euo pipefail
-
-                    rm -rf "$PLUGIN_OUTPUT_DIR"
-                    mkdir -p "$PLUGIN_OUTPUT_DIR"
-
-                    mapfile -d '' plugin_jars < <(
-                        find . -type f -path '*/target/*.jar' \
-                            ! -name 'original-*.jar' \
-                            -print0
-                    )
-
-                    if ((${#plugin_jars[@]} == 0)); then
-                        echo "No plugin JAR files found."
-                        exit 1
-                    fi
-
-                    for jar in "${plugin_jars[@]}"; do
-                        jar_name="$(basename "$jar")"
-                        destination="$PLUGIN_OUTPUT_DIR/$jar_name"
-
-                        if [[ -e "$destination" ]]; then
-                            echo "Duplicate plugin JAR name: $jar_name"
-                            exit 1
-                        fi
-
-                        cp "$jar" "$destination"
-                        echo "Collected: $jar"
-                    done
-
-                    echo "Plugin JARs ready in $PLUGIN_OUTPUT_DIR:"
-                    ls -1 "$PLUGIN_OUTPUT_DIR"
-                '''
             }
         }
 
@@ -126,90 +91,18 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
             file(credentialsId: knownHostsCredentialId, variable: 'KNOWN_HOSTS')
     ]) {
         sshagent(credentials: [sshCredentialId]) {
-            sh '''#!/usr/bin/env bash
-                set -euo pipefail
 
-                archive="${WORKSPACE}/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
-                remote_archive="/tmp/unit-billing-plugins-${BUILD_NUMBER}.tar.gz"
-                remote_script="/tmp/remote_deploy-${BUILD_NUMBER}.sh"
-                env_file="/opt/${SERVICE_NAME}/.env"
+            // email-notifier
+            sh '''
+                scp -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes \
+                    email-notifier/target/email-notifier-*.jar "$DEPLOY_HOST:$PLUGIN_DIR/email-notifier.jar.new"
 
-                tar -czf "$archive" -C "$PLUGIN_OUTPUT_DIR" .
-
-                cat << 'EOF' > "${WORKSPACE}/remote_deploy.sh"
-#!/usr/bin/env bash
-set -euo pipefail
-
-archive="$1"
-env_file="$2"
-service_name="$3"
-
-if [[ ! -f "$env_file" ]]; then
-    echo "Environment file not found: $env_file"
-    exit 1
-fi
-
-set -a
-source "$env_file"
-set +a
-
-plugin_dir="${PLUGIN_DIR:-${UNITBILLING_CONFIGURATION_PLUGINS_DIRECTORY:-}}"
-
-if [[ -z "$plugin_dir" ]]; then
-    echo "Plugin directory is missing from $env_file"
-    exit 1
-fi
-
-if [[ "$plugin_dir" != /* ]]; then
-    plugin_dir="/opt/$service_name/$plugin_dir"
-fi
-
-staging_dir="$(mktemp -d)"
-trap 'rm -rf "$staging_dir"; rm -f "$archive"' EXIT
-
-tar -xzf "$archive" -C "$staging_dir"
-
-shopt -s nullglob
-plugin_jars=("$staging_dir"/*.jar)
-
-if ((${#plugin_jars[@]} == 0)); then
-    echo "No plugin JAR files found in deployment archive."
-    exit 1
-fi
-
-echo "Deploying ${#plugin_jars[@]} plugin JAR(s) to $plugin_dir"
-
-systemctl stop "$service_name"
-mkdir -p "$plugin_dir"
-
-install \
-    -o unitbilling \
-    -g unitbilling \
-    -m 0644 \
-    "${plugin_jars[@]}" \
-    "$plugin_dir/"
-
-systemctl start "$service_name"
-systemctl status "$service_name" --no-pager
-EOF
-
-                scp \
-                    -o UserKnownHostsFile="$KNOWN_HOSTS" \
-                    -o StrictHostKeyChecking=yes \
-                    "$archive" \
-                    "$DEPLOY_HOST:$remote_archive"
-
-                scp \
-                    -o UserKnownHostsFile="$KNOWN_HOSTS" \
-                    -o StrictHostKeyChecking=yes \
-                    "${WORKSPACE}/remote_deploy.sh" \
-                    "$DEPLOY_HOST:$remote_script"
-
-                ssh \
-                    -o UserKnownHostsFile="$KNOWN_HOSTS" \
-                    -o StrictHostKeyChecking=yes \
-                    "$DEPLOY_HOST" \
-                    "sudo bash '$remote_script' '$remote_archive' '$env_file' '$SERVICE_NAME' && rm -f '$remote_script'"
+                ssh -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes "$DEPLOY_HOST" \
+                    "sudo systemctl stop '$SERVICE_NAME' && \
+                     sudo mv '$PLUGIN_DIR/email-notifier.jar.new' '$PLUGIN_DIR/email-notifier.jar' && \
+                     sudo chown 'unitbilling:unitbilling' '$PLUGIN_DIR/email-notifier.jar' && \
+                     sudo systemctl start '$SERVICE_NAME' && \
+                     sudo systemctl status '$SERVICE_NAME' --no-pager"
             '''
         }
     }
