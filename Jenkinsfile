@@ -91,11 +91,11 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
             file(credentialsId: knownHostsCredentialId, variable: 'KNOWN_HOSTS')
     ]) {
         sshagent(credentials: [sshCredentialId]) {
-
+            sh 'pwd && ls -la && find . -name "*.jar" -path "*/target/*"' //temporary debug command to list all JAR files in the workspace
             // email-notifier
             sh '''
-                scp -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes \
-                    email-notifier/target/email-notifier-*.jar "$DEPLOY_HOST:$PLUGIN_DIR/email-notifier.jar.new"
+                scp -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes \\
+                    notification-plugins/email-notifier/target/email-notifier-*.jar "$DEPLOY_HOST:$PLUGIN_DIR/email-notifier.jar.new"
 
                 ssh -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes "$DEPLOY_HOST" \
                     "sudo systemctl stop '$SERVICE_NAME' && \
