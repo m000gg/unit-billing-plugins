@@ -91,7 +91,6 @@ def deploy(String hostCredentialId, String knownHostsCredentialId, String sshCre
             file(credentialsId: knownHostsCredentialId, variable: 'KNOWN_HOSTS')
     ]) {
         sshagent(credentials: [sshCredentialId]) {
-            sh 'pwd && ls -la && find . -name "*.jar" -path "*/target/*"' //temporary debug command to list all JAR files in the workspace
             // email-notifier
             sh '''
                 scp -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes \\
