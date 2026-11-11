@@ -17,7 +17,7 @@ public final class ServiceSubscriptionPlugin implements Plugin {
 
     @Override
     public void onEnable(PluginContext context) {
-        log.info("Email notifier enabled");
+        log.info("Service subscription plugin enabled");
 
     }
 
