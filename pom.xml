@@ -37,12 +37,12 @@
 
     <properties>
         <java.version>25</java.version>
-        <plugin-api.version>0.2.4-SNAPSHOT</plugin-api.version>
+        <plugin-api.version>0.2.3-SNAPSHOT</plugin-api.version>
     </properties>
 
     <modules>
         <module>notification-plugins/email-notifier</module>
-        <module>fx-plugins/nbu-exchange-rate</module>
+        <module>service-plugins/service-subscription</module>
     </modules>
 
     <!-- ===================== SHARED DEPENDENCIES ===================== -->
