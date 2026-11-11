@@ -1,0 +1,17 @@
+Bonjour,
+
+Le solde de votre compte Unit Billing a été mis à jour.
+
+DÉTAILS DE LA TRANSACTION
+------------------
+Type :        %s
+Direction :   %s
+Description : %s
+Montant :     %s %s
+Nouveau solde : %s %s
+Date :        %s
+
+Pour toute question concernant cette transaction, veuillez contacter notre équipe d’assistance.
+
+Cordialement,
+L’équipe Unit Billing
