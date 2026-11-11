@@ -42,6 +42,7 @@
 
     <modules>
         <module>notification-plugins/email-notifier</module>
+        <module>service-plugins/service-subscription</module>
     </modules>
 
     <!-- ===================== SHARED DEPENDENCIES ===================== -->
