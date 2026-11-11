@@ -27,7 +27,7 @@ public final class EmailNotifierPlugin implements Plugin {
         try {
             smtpConfig = SMTPServerConfiguration.from(context);
         } catch (IllegalArgumentException e) {
-            log.error("Email notifier disabled: invalid SMTP configuration: {}",
+            log.info("Email notifier disabled: invalid SMTP configuration: {}",
                     e.getMessage());
             return;
         }
@@ -61,9 +61,9 @@ public final class EmailNotifierPlugin implements Plugin {
                         );
 
                 sender.send(message);
-                log.debug("Balance notification sent for userId={}", event.userId());
+                log.info("Balance notification sent for userId={}", event.userId());
             } catch (Exception e) {
-                log.warn("Failed to send balance notification for userId={}",
+                log.info("Failed to send balance notification for userId={}",
                         event.userId(), e);
             }
         });
