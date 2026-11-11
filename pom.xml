@@ -37,7 +37,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <plugin-api.version>0.1.0</plugin-api.version>
+        <plugin-api.version>0.2.3-SNAPSHOT</plugin-api.version>
     </properties>
 
     <modules>

@@ -14,6 +14,7 @@ class EmailSenderTest {
                 "billing@example.com",
                 null,
                 null,
+                false,
                 false
         );
 

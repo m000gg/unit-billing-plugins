@@ -8,7 +8,8 @@ public record SMTPServerConfiguration(
         int port,
         String from,
         String username,
-        String password, boolean startTlsEnabled
+        String password, boolean startTlsEnabled,
+        boolean sslEnabled
 ) {
     public static SMTPServerConfiguration from(PluginContext context) {
         PluginSettings settings = context.settings();
@@ -18,7 +19,8 @@ public record SMTPServerConfiguration(
         String from = settings.get("from").orElse("").trim();
         String username = settings.get("username").orElse(null);
         String password = settings.get("password").orElse(null);
-        String startTlsValue = settings.get("starttls").orElse("false").trim();
+        boolean startTls = parseBoolean(settings, "starttls");
+        boolean ssl = parseBoolean(settings, "ssl");
 
         if (host.isEmpty() || portValue.isEmpty() || from.isEmpty()) {
             throw new IllegalArgumentException(
@@ -48,18 +50,39 @@ public record SMTPServerConfiguration(
             );
         }
 
-        if (!startTlsValue.equalsIgnoreCase("true")
-                && !startTlsValue.equalsIgnoreCase("false")) {
-            throw new IllegalArgumentException("SMTP starttls must be true or false");
+        if (startTls && ssl) {
+            throw new IllegalArgumentException(
+                    "SMTP starttls and ssl are mutually exclusive"
+            );
+        }
+
+        if (username != null && !startTls && !ssl) {
+            throw new IllegalArgumentException(
+                    "SMTP credentials require encryption: enable starttls or ssl"
+            );
         }
 
         return new SMTPServerConfiguration(
-                host,
-                port,
-                from,
-                username,
-                password,
-                Boolean.parseBoolean(startTlsValue)
+                host, port, from, username, password, startTls, ssl
         );
+    }
+
+    private static boolean parseBoolean(PluginSettings s, String key) {
+        String v = s.get(key).orElse("false").trim();
+        if (!v.equalsIgnoreCase("true") && !v.equalsIgnoreCase("false")) {
+            throw new IllegalArgumentException("SMTP " + key + " must be true or false");
+        }
+        return Boolean.parseBoolean(v);
+    }
+
+    @Override
+    public String toString() {
+        return "SMTPServerConfiguration[host=" + host
+                + ", port=" + port
+                + ", from=" + from
+                + ", username=" + username
+                + ", password=" + (password == null ? "null" : "***")
+                + ", startTlsEnabled=" + startTlsEnabled
+                + ", sslEnabled=" + sslEnabled + "]";
     }
 }
