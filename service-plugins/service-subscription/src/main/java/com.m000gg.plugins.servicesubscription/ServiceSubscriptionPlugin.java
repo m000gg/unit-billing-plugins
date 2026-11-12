@@ -2,6 +2,7 @@ package com.m000gg.plugins.servicesubscription;
 
 import com.m000gg.plugin.api.Plugin;
 import com.m000gg.plugin.api.PluginContext;
+import com.m000gg.plugins.servicesubscription.domain.PluginId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,7 +13,7 @@ public final class ServiceSubscriptionPlugin implements Plugin {
 
     @Override
     public String getId() {
-        return "service-subscription";
+        return PluginId.VALUE;
     }
 
     @Override
