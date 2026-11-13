@@ -83,20 +83,281 @@ class SubscriptionTest {
     @Test
     void activateWithZeroMinPeriodsHasNoMinimumTerm() {
         Subscription subscription = activeSince(JAN_31, 0);
-
-
+        assertThat(subscription.minTermEndsAt()).isEqualTo(JAN_31);
     }
 
     @Test
     void activateRejectsNegativeMinPeriods() {
         Subscription subscription = newSubscription();
-
-
+        assertThatThrownBy(() -> subscription.activate(JAN_31, -1))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void activateRejectsNullNow() {
         Subscription subscription = newSubscription();
+        assertThatThrownBy(() -> subscription.activate(null, 1))
+                .isInstanceOf(NullPointerException.class);
+    }
 
+
+    @Test
+    void activateTwiceIsRejected() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        assertThatThrownBy(() -> subscription.activate(JAN_31, 0))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void activateOnPreviouslyPaidSuspendedSubscriptionIsRejected() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.suspend();
+
+        assertThatThrownBy(() -> subscription.activate(APR_5, 0))
+                .isInstanceOf(IllegalStateException.class);
+
+    }
+
+    @Test
+    void recordPaymentMovesTheBillingDateWithoutDrift() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        subscription.recordPayment();
+
+        assertThat(subscription.nextBillingAt()).isEqualTo(MAR_31);
+        assertThat(subscription.nextPeriodNo()).isEqualTo(3);
+        assertThat(subscription.periodsSinceAnchor()).isEqualTo(2);
+
+        subscription.recordPayment();
+
+        assertThat(subscription.nextBillingAt()).isEqualTo(APR_30);
+        assertThat(subscription.nextPeriodNo()).isEqualTo(4);
+        assertThat(subscription.periodsSinceAnchor()).isEqualTo(3);
+    }
+
+    @Test
+    void recordPaymentOnSuspendedSubscriptionIsRejected() {
+        Subscription subscription = newSubscription();
+
+        assertThatThrownBy(subscription::recordPayment)
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+
+    @Test
+    void subscriptionIsDueFromTheBillingDateOn() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        assertThat(subscription.isDue(FEB_28.minusSeconds(1))).isFalse();
+        assertThat(subscription.isDue(FEB_28)).isTrue();
+        assertThat(subscription.isDue(FEB_28.plusSeconds(1))).isTrue();
+    }
+
+    @Test
+    void suspendedSubscriptionIsNeverDue() {
+        Subscription neverPaid = newSubscription();
+        Subscription suspended = activeSince(JAN_31, 0);
+        suspended.suspend();
+
+        assertThat(neverPaid.isDue(MAY_5)).isFalse();
+        assertThat(suspended.isDue(MAY_5)).isFalse();
+    }
+
+
+    @Test
+    void suspendKeepsThePeriodNumberAndTheBillingDate() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.recordPayment();
+
+        subscription.suspend();
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.SUSPENDED);
+        assertThat(subscription.nextPeriodNo()).isEqualTo(3);
+        assertThat(subscription.nextBillingAt()).isEqualTo(MAR_31);
+    }
+
+    @Test
+    void suspendIsRejectedWhenNotActive() {
+        Subscription subscription = newSubscription();
+
+        assertThatThrownBy(subscription::suspend)
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+
+    @Test
+    void resumeStartsANewAnchorAndKeepsTheHistory() {
+        Subscription subscription = activeSince(JAN_31, 3);
+        subscription.recordPayment();
+        subscription.suspend();
+
+        subscription.resume(APR_5);
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(subscription.anchorAt()).isEqualTo(APR_5);
+        assertThat(subscription.periodsSinceAnchor()).isEqualTo(1);
+        assertThat(subscription.nextPeriodNo()).isEqualTo(4);
+        assertThat(subscription.nextBillingAt()).isEqualTo(MAY_5);
+        assertThat(subscription.startedAt()).isEqualTo(JAN_31);
+        assertThat(subscription.minTermEndsAt()).isEqualTo(APR_30);
+    }
+
+    @Test
+    void resumeOnNeverPaidSubscriptionIsRejected() {
+        Subscription subscription = newSubscription();
+
+        assertThatThrownBy(() -> subscription.resume(APR_5))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resumeOnActiveSubscriptionIsRejected() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        assertThatThrownBy(() -> subscription.resume(APR_5))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resumeRejectsNullNow() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.suspend();
+
+        assertThatThrownBy(() -> subscription.resume(null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+
+    @Test
+    void cancelInTheFirstMonthWaitsForTheMinimumTerm() {
+        Subscription subscription = activeSince(JAN_31, 3);
+
+        subscription.cancel(FEB_1);
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(subscription.cancelAtPeriodEnd()).isTrue();
+        assertThat(subscription.endsAt()).isEqualTo(APR_30);
+        assertThat(subscription.shouldClose()).isFalse();
+    }
+
+    @Test
+    void cancelAfterTheMinimumTermEndsAtTheNextBillingDate() {
+        Subscription subscription = activeSince(JAN_31, 1);
+        subscription.recordPayment();
+        subscription.recordPayment();
+
+        subscription.cancel(APR_5);
+
+        assertThat(subscription.endsAt()).isEqualTo(APR_30);
+        assertThat(subscription.shouldClose()).isTrue();
+    }
+
+    @Test
+    void repeatedCancelDoesNotMoveEndsAt() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.cancel(FEB_1);
+        assertThat(subscription.endsAt()).isEqualTo(FEB_28);
+
+        subscription.recordPayment();
+        subscription.cancel(APR_5);
+
+        assertThat(subscription.endsAt()).isEqualTo(FEB_28);
+    }
+
+    @Test
+    void cancelOfSuspendedSubscriptionCancelsImmediately() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.suspend();
+
+        subscription.cancel(APR_5);
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.CANCELED);
+        assertThat(subscription.endsAt()).isEqualTo(APR_5);
+    }
+
+    @Test
+    void cancelOfNeverPaidSubscriptionCancelsImmediately() {
+        Subscription subscription = newSubscription();
+
+        subscription.cancel(JAN_31);
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.CANCELED);
+        assertThat(subscription.endsAt()).isEqualTo(JAN_31);
+    }
+
+    @Test
+    void cancelRejectsNullNow() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        assertThatThrownBy(() -> subscription.cancel(null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+
+    @Test
+    void shouldCloseIsFalseWithoutCancellation() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        assertThat(subscription.shouldClose()).isFalse();
+    }
+
+    @Test
+    void shouldCloseIsFalseOnASubscriptionThatIsNotActive() {
+        assertThat(newSubscription().shouldClose()).isFalse();
+    }
+
+    @Test
+    void shouldCloseBecomesTrueWhenTheMinimumTermIsReached() {
+        Subscription subscription = activeSince(JAN_31, 3);
+        subscription.cancel(FEB_1);
+        assertThat(subscription.shouldClose()).isFalse();
+
+        subscription.recordPayment();
+        assertThat(subscription.nextBillingAt()).isEqualTo(MAR_31);
+        assertThat(subscription.shouldClose()).isFalse();
+
+        subscription.recordPayment();
+        assertThat(subscription.nextBillingAt()).isEqualTo(APR_30);
+        assertThat(subscription.shouldClose()).isTrue();
+    }
+
+    @Test
+    void closeMovesTheSubscriptionToCanceled() {
+        Subscription subscription = activeSince(JAN_31, 0);
+        subscription.cancel(FEB_1);
+
+        subscription.close();
+
+        assertThat(subscription.status()).isEqualTo(SubscriptionStatus.CANCELED);
+    }
+
+    @Test
+    void closeBeforeTheEndIsRejected() {
+        Subscription subscription = activeSince(JAN_31, 3);
+        subscription.cancel(FEB_1);
+
+        assertThatThrownBy(subscription::close)
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void closeWithoutCancellationIsRejected() {
+        Subscription subscription = activeSince(JAN_31, 0);
+
+        assertThatThrownBy(subscription::close)
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+
+    @Test
+    void canceledSubscriptionRejectsEveryTransition() {
+        Subscription subscription = canceledSubscription();
+
+        assertThatThrownBy(subscription::suspend).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> subscription.resume(APR_5)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> subscription.activate(APR_5, 0)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(subscription::recordPayment).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> subscription.cancel(APR_5)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(subscription::close).isInstanceOf(IllegalStateException.class);
     }
 }
