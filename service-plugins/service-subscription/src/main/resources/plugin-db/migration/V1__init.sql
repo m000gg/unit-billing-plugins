@@ -15,7 +15,7 @@ CREATE TABLE subscription (
                               subscriber_id       UUID         NOT NULL,
                               service_id          UUID         NOT NULL REFERENCES service (id),
                               status              VARCHAR(16)  NOT NULL
-                                  CHECK (status IN ('PENDING', 'ACTIVE', 'SUSPENDED', 'CANCELLED')),
+                                  CHECK (status IN ('ACTIVE', 'SUSPENDED', 'CANCELED')),
                               started_at          TIMESTAMPTZ,
                               min_term_ends_at    TIMESTAMPTZ,
                               ends_at             TIMESTAMPTZ,
@@ -32,7 +32,7 @@ CREATE TABLE subscription (
 CREATE INDEX idx_subscription_due ON subscription (status, next_billing_at);
 CREATE INDEX idx_subscription_subscriber ON subscription (subscriber_id, status);
 CREATE UNIQUE INDEX uq_subscription_live
-    ON subscription (subscriber_id, service_id) WHERE status <> 'CANCELLED';
+    ON subscription (subscriber_id, service_id) WHERE status <> 'CANCELED';
 
 CREATE TABLE subscription_charge (
                                      id              UUID PRIMARY KEY,
