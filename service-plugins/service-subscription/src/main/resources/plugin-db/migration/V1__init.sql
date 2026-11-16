@@ -41,12 +41,10 @@ CREATE TABLE subscription_charge (
                                      period_start    TIMESTAMPTZ   NOT NULL,
                                      amount          NUMERIC(19,4) NOT NULL CHECK (amount > 0),
                                      status          VARCHAR(16)   NOT NULL CHECK (status IN ('SUCCESS', 'FAILED')),
-                                     failure_reason  VARCHAR(32),
                                      ledger_entry_id UUID,
                                      attempted_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
                                      CONSTRAINT chk_charge_success CHECK (status <> 'SUCCESS' OR ledger_entry_id IS NOT NULL),
-                                     CONSTRAINT chk_charge_failed  CHECK (status <> 'FAILED'
-                                         OR (failure_reason IS NOT NULL AND ledger_entry_id IS NULL))
+                                     CONSTRAINT chk_charge_failed  CHECK (status <> 'FAILED' OR ledger_entry_id IS NULL)
 );
 
 CREATE UNIQUE INDEX uq_charge_success
