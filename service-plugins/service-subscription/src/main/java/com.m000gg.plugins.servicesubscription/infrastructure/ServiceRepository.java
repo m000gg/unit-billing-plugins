@@ -66,6 +66,17 @@ public final class ServiceRepository {
         );
     }
 
+    public List<Service> findAll() {
+        return db.query(
+                """
+                SELECT id, name, description, price, period_unit, min_periods, status
+                FROM service
+                ORDER BY created_at ASC
+                """,
+                ServiceRepository::mapRow
+        );
+    }
+
     public boolean update(Service service, Instant now) {
         Objects.requireNonNull(service, "service");
         Objects.requireNonNull(now, "now");
