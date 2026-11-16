@@ -10,6 +10,8 @@ import com.m000gg.plugins.servicesubscription.domain.*;
 import com.m000gg.plugins.servicesubscription.infrastructure.ServiceRepository;
 import com.m000gg.plugins.servicesubscription.infrastructure.SubscriptionChargeRepository;
 import com.m000gg.plugins.servicesubscription.infrastructure.SubscriptionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,6 +32,8 @@ public final class SubscriptionService {
     private final SubscriptionChargeRepository chargeRepository;
     private final UserDirectory users;
     private final BalanceCharger balanceCharger;
+
+    private static final Logger log = LoggerFactory.getLogger(SubscriptionService.class);
 
     public SubscriptionService(PluginDatabase db, ServiceRepository serviceRepository, SubscriptionRepository subscriptionRepository, SubscriptionChargeRepository chargeRepository, UserDirectory users, BalanceCharger balanceCharger ){
         this.db = Objects.requireNonNull(db, "db");
@@ -175,6 +179,98 @@ public final class SubscriptionService {
             }
             return subscription;
         });
+    }
+
+    // Process subscriptios where next_billing_at <= now
+    public int processDueSubscriptions(Instant now, int batchSize) {
+        Objects.requireNonNull(now, "now");
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("batchSize must be >= 1");
+        }
+
+        List<Subscription> dueSubscriptions = subscriptionRepository.findDue(now, batchSize);
+        int processed = 0;
+
+        for (Subscription candidate : dueSubscriptions) {
+            try {
+                if (processSingleDue(candidate.id(), now)) {
+                    processed++;
+                }
+            } catch (RuntimeException e) {
+                log.error("Failed to process due subscription {}", candidate.id(), e);
+            }
+        }
+        return processed;
+    }
+
+    // process ONE subscription: close, continue OR suspend
+    private boolean processSingleDue(UUID subscriptionId, Instant now) {
+        Subscription subscription = db.inTransaction(() -> {
+            Subscription current = subscriptionRepository.findById(subscriptionId).orElse(null);
+            if (current == null || !current.isDue(now)) {
+                return null;
+            }
+            if (current.shouldClose()) {
+                current.close();
+                if (!subscriptionRepository.update(current, now)) {
+                    throw new IllegalStateException("Concurrent update on subscription " + current.id());
+                }
+                return null;
+            }
+            return current;
+        });
+
+        if (subscription == null) {
+            return false;
+        }
+
+        Service service = serviceRepository.findById(subscription.serviceId())
+                .orElseThrow(() -> new IllegalStateException("Service not found: " + subscription.serviceId()));
+
+        int periodNo = subscription.nextPeriodNo();
+        Instant periodStart = subscription.nextBillingAt();
+
+
+        ChargeResult chargeResult = balanceCharger.charge(new ChargeRequest(
+                subscription.subscriberId(),
+                service.price(),
+                IdempotencyKeys.charge(subscription.id(), periodNo),
+                "Subscription: " + service.name()
+        ));
+
+        db.inTransaction(() -> {
+            if (chargeResult.status() == ChargeStatus.SUCCESS) {
+                chargeRepository.insert(new SubscriptionCharge(
+                        UUID.randomUUID(),
+                        subscription.id(),
+                        periodNo,
+                        periodStart,
+                        service.price(),
+                        SubscriptionChargeStatus.SUCCESS,
+                        chargeResult.ledgerEntryId(),
+                        now
+                ));
+                subscription.recordPayment();
+            } else {
+                chargeRepository.insert(new SubscriptionCharge(
+                        UUID.randomUUID(),
+                        subscription.id(),
+                        periodNo,
+                        periodStart,
+                        service.price(),
+                        SubscriptionChargeStatus.FAILED,
+                        null,
+                        now
+                ));
+                subscription.suspend();
+            }
+
+            if (!subscriptionRepository.update(subscription, now)) {
+                throw new IllegalStateException("Concurrent update on subscription " + subscription.id());
+            }
+        });
+
+        return true;
     }
 
     public Optional<Subscription> findSubscription(UUID subscriptionId) {
