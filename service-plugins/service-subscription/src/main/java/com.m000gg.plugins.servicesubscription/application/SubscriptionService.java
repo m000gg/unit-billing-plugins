@@ -6,11 +6,7 @@ import com.m000gg.plugin.api.command.balance.ChargeResult;
 import com.m000gg.plugin.api.command.balance.ChargeStatus;
 import com.m000gg.plugin.api.db.PluginDatabase;
 import com.m000gg.plugin.api.query.user.UserDirectory;
-import com.m000gg.plugins.servicesubscription.domain.IdempotencyKeys;
-import com.m000gg.plugins.servicesubscription.domain.Service;
-import com.m000gg.plugins.servicesubscription.domain.Subscription;
-import com.m000gg.plugins.servicesubscription.domain.SubscriptionCharge;
-import com.m000gg.plugins.servicesubscription.domain.SubscriptionChargeStatus;
+import com.m000gg.plugins.servicesubscription.domain.*;
 import com.m000gg.plugins.servicesubscription.infrastructure.ServiceRepository;
 import com.m000gg.plugins.servicesubscription.infrastructure.SubscriptionChargeRepository;
 import com.m000gg.plugins.servicesubscription.infrastructure.SubscriptionRepository;
@@ -58,13 +54,12 @@ public final class SubscriptionService {
         return serviceRepository.findById(serviceId);
     }
 
-    //
+    // subscribe to a service adn activate if enough money
     public Subscription subscribeAndActivate(UUID subscriberId, UUID serviceId, Instant now) {
         Objects.requireNonNull(subscriberId, "subscriberId");
         Objects.requireNonNull(serviceId, "serviceId");
         Objects.requireNonNull(now, "now");
 
-        // Core user verification goes through UserDirectory API, never SQL to core schema.
         users.findContact(subscriberId)
                 .orElseThrow(() -> new IllegalArgumentException("Subscriber not found: " + subscriberId));
 
@@ -72,13 +67,27 @@ public final class SubscriptionService {
                 .filter(Service::isAvailableForSubscription)
                 .orElseThrow(() -> new IllegalArgumentException("Active service not found: " + serviceId));
 
-        Subscription subscription = Subscription.createNew(UUID.randomUUID(), subscriberId, serviceId);
-        db.inTransaction(() -> subscriptionRepository.insert(subscription, now));
+        Subscription subscription = db.inTransaction(() -> {
+            Optional<Subscription> existing = subscriptionRepository
+                    .findLiveBySubscriberAndService(subscriberId, serviceId);
+            if (existing.isPresent()) {
+                Subscription current = existing.get();
+                if (current.status() == SubscriptionStatus.ACTIVE) {
+                    throw new IllegalStateException("Subscriber already has an active subscription for this service");
+                }
+                return current;
+            }
+            Subscription created = Subscription.createNew(UUID.randomUUID(), subscriberId, serviceId);
+            subscriptionRepository.insert(created, now);
+            return created;
+        });
+
+        int periodNo = subscription.nextPeriodNo();
 
         ChargeResult chargeResult = balanceCharger.charge(new ChargeRequest(
                 subscriberId,
                 service.price(),
-                IdempotencyKeys.charge(subscription.id(), subscription.nextPeriodNo()),
+                IdempotencyKeys.charge(subscription.id(), periodNo),
                 "Subscription: " + service.name()
         ));
 
@@ -87,14 +96,18 @@ public final class SubscriptionService {
                 chargeRepository.insert(new SubscriptionCharge(
                         UUID.randomUUID(),
                         subscription.id(),
-                        1,
+                        periodNo,
                         now,
                         service.price(),
                         SubscriptionChargeStatus.SUCCESS,
                         chargeResult.ledgerEntryId(),
                         now
                 ));
-                subscription.activate(now, service.minPeriods());
+                if (subscription.neverPaid()) {
+                    subscription.activate(now, service.minPeriods());
+                } else {
+                    subscription.resume(now);
+                }
                 if (!subscriptionRepository.update(subscription, now)) {
                     throw new IllegalStateException("Concurrent update on subscription " + subscription.id());
                 }
@@ -102,7 +115,7 @@ public final class SubscriptionService {
                 chargeRepository.insert(new SubscriptionCharge(
                         UUID.randomUUID(),
                         subscription.id(),
-                        1,
+                        periodNo,
                         now,
                         service.price(),
                         SubscriptionChargeStatus.FAILED,
@@ -112,5 +125,70 @@ public final class SubscriptionService {
             }
             return subscription;
         });
+    }
+
+    public Service updateService(UUID serviceId,String name, String description, int minPeriods, Instant now) {
+        Objects.requireNonNull(serviceId, "serviceId");
+        Objects.requireNonNull(now, "now");
+
+        return db.inTransaction(() -> {
+            Service service = serviceRepository.findById(serviceId)
+                    .orElseThrow(() -> new IllegalArgumentException("Service not found: " + serviceId));
+
+            service.update(name, description, minPeriods);
+
+            if (!serviceRepository.update(service, now)) {
+                throw new IllegalStateException("Service disappeared during update: " + serviceId);
+            }
+            return service;
+        });
+    }
+
+    public void deleteService(UUID serviceId, Instant now) {
+        Objects.requireNonNull(serviceId, "serviceId");
+        Objects.requireNonNull(now, "now");
+
+        db.inTransaction(() -> {
+            Service service = serviceRepository.findById(serviceId)
+                    .orElseThrow(() -> new IllegalArgumentException("Service not found: " + serviceId));
+
+            service.delete();
+
+            if (!serviceRepository.update(service, now)) {
+                throw new IllegalStateException("Service disappeared during delete: " + serviceId);
+            }
+        });
+    }
+
+    public Subscription cancelSubscription(UUID subscriptionId, Instant now) {
+        Objects.requireNonNull(subscriptionId, "subscriptionId");
+        Objects.requireNonNull(now, "now");
+
+        return db.inTransaction(() -> {
+            Subscription subscription = subscriptionRepository.findById(subscriptionId)
+                    .orElseThrow(() -> new IllegalArgumentException("Subscription not found: " + subscriptionId));
+
+            subscription.cancel(now);
+
+            if (!subscriptionRepository.update(subscription, now)) {
+                throw new IllegalStateException("Concurrent update on subscription " + subscriptionId);
+            }
+            return subscription;
+        });
+    }
+
+    public Optional<Subscription> findSubscription(UUID subscriptionId) {
+        Objects.requireNonNull(subscriptionId, "subscriptionId");
+        return subscriptionRepository.findById(subscriptionId);
+    }
+
+    public List<Subscription> findSubscriptionsBySubscriber(UUID subscriberId) {
+        Objects.requireNonNull(subscriberId, "subscriberId");
+        return subscriptionRepository.findBySubscriberId(subscriberId);
+    }
+
+    public List<SubscriptionCharge> findChargesBySubscription(UUID subscriptionId) {
+        Objects.requireNonNull(subscriptionId, "subscriptionId");
+        return chargeRepository.findBySubscriptionId(subscriptionId);
     }
 }

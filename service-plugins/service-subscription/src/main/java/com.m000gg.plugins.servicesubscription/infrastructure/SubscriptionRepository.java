@@ -141,4 +141,16 @@ public final class SubscriptionRepository {
                 row.getLong("version")
         );
     }
+
+    public Optional<Subscription> findLiveBySubscriberAndService(UUID subscriberId, UUID serviceId) {
+        Objects.requireNonNull(subscriberId, "subscriberId");
+        Objects.requireNonNull(serviceId, "serviceId");
+        return db.queryOne(
+                SELECT_COLUMNS + " WHERE subscriber_id = ? AND service_id = ? AND status <> ?",
+                SubscriptionRepository::mapRow,
+                subscriberId,
+                serviceId,
+                SubscriptionStatus.CANCELED.name()
+        );
+    }
 }
