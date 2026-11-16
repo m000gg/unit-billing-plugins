@@ -22,6 +22,7 @@ public final class Subscription {
     private Instant nextBillingAt;
     private boolean cancelAtPeriodEnd;
     private Instant endsAt;
+    private long version;
 
     private Subscription(UUID id, UUID subscriberId, UUID serviceId,
                          SubscriptionStatus status, int nextPeriodNo, Instant nextBillingAt) {
@@ -36,6 +37,25 @@ public final class Subscription {
     /** A new subscription that was never paid. It is SUSPENDED until the first payment. */
     public static Subscription createNew(UUID id, UUID subscriberId, UUID serviceId) {
         return new Subscription(id, subscriberId, serviceId, SubscriptionStatus.SUSPENDED, 1, null);
+    }
+
+    //Transform SQL entity to Java Object
+    public static Subscription fromDb(UUID id,UUID subscriberId, UUID serviceId,SubscriptionStatus status, Instant startedAt,
+                                      Instant minTermEndsAt, Instant endsAt, Instant anchorAt, int periodsSinceAnchor,
+                                      int nextPeriodNo, Instant nextBillingAt, boolean cancelAtPeriodEnd, long version) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(subscriberId, "subscriberId");
+        Objects.requireNonNull(serviceId, "serviceId");
+        Objects.requireNonNull(status, "status");
+        Subscription subscription = new Subscription(id, subscriberId, serviceId, status, nextPeriodNo, nextBillingAt);
+        subscription.startedAt = startedAt;
+        subscription.minTermEndsAt = minTermEndsAt;
+        subscription.endsAt = endsAt;
+        subscription.anchorAt = anchorAt;
+        subscription.periodsSinceAnchor = periodsSinceAnchor;
+        subscription.cancelAtPeriodEnd = cancelAtPeriodEnd;
+        subscription.version = version;
+        return subscription;
     }
 
     /**
@@ -179,5 +199,9 @@ public final class Subscription {
 
     public boolean cancelAtPeriodEnd() {
         return cancelAtPeriodEnd;
+    }
+
+    public long version() {
+        return version;
     }
 }
