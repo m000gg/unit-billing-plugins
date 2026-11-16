@@ -43,6 +43,19 @@ public final class Service {
         return new Service(id, name, description, price, ServiceStatus.ACTIVE, minPeriods, PeriodUnit.MONTH);
     }
 
+    //Transform SQL entity to Java Object
+    public static Service fromDb(UUID id, String name, String description,
+                                    BigDecimal price, ServiceStatus status,
+                                    int minPeriods, PeriodUnit period) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(price, "price");
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(period, "period");
+        validatePrice(price);
+        validateEditableFields(name, description, minPeriods);
+        return new Service(id, name, description, price, status, minPeriods, period);
+    }
+
     public void update(String newName, String newDescription, int newMinPeriods) {
         if (serviceStatus == ServiceStatus.DELETED) {
             throw new IllegalStateException("Deleted service can not be updated.");
