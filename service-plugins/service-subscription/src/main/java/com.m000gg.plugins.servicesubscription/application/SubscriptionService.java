@@ -54,6 +54,10 @@ public final class SubscriptionService {
         return serviceRepository.findAllActive();
     }
 
+    public List<Service> listAllServices() {
+        return serviceRepository.findAll();
+    }
+
     public Optional<Service> findService(UUID serviceId) {
         return serviceRepository.findById(serviceId);
     }
@@ -271,6 +275,93 @@ public final class SubscriptionService {
         });
 
         return true;
+    }
+
+    // trying to "unsuspend" every suspended funcrion
+    public int onBalanceToppedUp(UUID subscriberId, Instant now) {
+        Objects.requireNonNull(subscriberId, "subscriberId");
+        Objects.requireNonNull(now, "now");
+
+        List<Subscription> suspended = subscriptionRepository.findSuspendedBySubscriberId(subscriberId);
+        int reactivated = 0;
+
+        for (Subscription candidate : suspended) {
+            try {
+                if (retrySuspended(candidate.id(), now)) {
+                    reactivated++;
+                }
+            } catch (RuntimeException e) {
+                log.error("Failed to reactivate suspended subscription {}", candidate.id(), e);
+            }
+        }
+        return reactivated;
+    }
+
+    // process 1 SUSPENDED Subscription (try to pay for it)
+    private boolean retrySuspended(UUID subscriptionId, Instant now) {
+        Subscription subscription = db.inTransaction(() -> {
+            Subscription current = subscriptionRepository.findById(subscriptionId).orElse(null);
+            if (current == null || current.status() != SubscriptionStatus.SUSPENDED) {
+                return null;
+            }
+            return current;
+        });
+
+        if (subscription == null) {
+            return false;
+        }
+
+        Service service = serviceRepository.findById(subscription.serviceId())
+                .orElseThrow(() -> new IllegalStateException("Service not found: " + subscription.serviceId()));
+
+        if (subscription.neverPaid() && !service.isAvailableForSubscription()) {
+            return false;
+        }
+
+        int periodNo = subscription.nextPeriodNo();
+
+        ChargeResult chargeResult = balanceCharger.charge(new ChargeRequest(
+                subscription.subscriberId(),
+                service.price(),
+                IdempotencyKeys.charge(subscription.id(), periodNo),
+                "Subscription: " + service.name()
+        ));
+
+        return db.inTransaction(() -> {
+            if (chargeResult.status() == ChargeStatus.SUCCESS) {
+                chargeRepository.insert(new SubscriptionCharge(
+                        UUID.randomUUID(),
+                        subscription.id(),
+                        periodNo,
+                        now,
+                        service.price(),
+                        SubscriptionChargeStatus.SUCCESS,
+                        chargeResult.ledgerEntryId(),
+                        now
+                ));
+                if (subscription.neverPaid()) {
+                    subscription.activate(now, service.minPeriods());
+                } else {
+                    subscription.resume(now);
+                }
+                if (!subscriptionRepository.update(subscription, now)) {
+                    throw new IllegalStateException("Concurrent update on subscription " + subscription.id());
+                }
+                return true;
+            }
+
+            chargeRepository.insert(new SubscriptionCharge(
+                    UUID.randomUUID(),
+                    subscription.id(),
+                    periodNo,
+                    now,
+                    service.price(),
+                    SubscriptionChargeStatus.FAILED,
+                    null,
+                    now
+            ));
+            return false;
+        });
     }
 
     public Optional<Subscription> findSubscription(UUID subscriptionId) {

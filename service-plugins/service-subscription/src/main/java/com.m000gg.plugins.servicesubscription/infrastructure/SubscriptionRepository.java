@@ -153,4 +153,14 @@ public final class SubscriptionRepository {
                 SubscriptionStatus.CANCELED.name()
         );
     }
+
+    public List<Subscription> findSuspendedBySubscriberId(UUID subscriberId) {
+        Objects.requireNonNull(subscriberId, "subscriberId");
+        return db.query(
+                SELECT_COLUMNS + " WHERE subscriber_id = ? AND status = ? ORDER BY created_at ASC",
+                SubscriptionRepository::mapRow,
+                subscriberId,
+                SubscriptionStatus.SUSPENDED.name()
+        );
+    }
 }
