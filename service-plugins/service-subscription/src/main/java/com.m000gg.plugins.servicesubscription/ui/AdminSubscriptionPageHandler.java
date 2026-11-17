@@ -7,15 +7,22 @@ import com.m000gg.plugins.servicesubscription.application.SubscriptionService;
 import com.m000gg.plugins.servicesubscription.domain.PluginId;
 import com.m000gg.plugins.servicesubscription.domain.Service;
 import com.m000gg.plugins.servicesubscription.domain.ServiceStatus;
+import com.m000gg.plugins.servicesubscription.domain.Subscription;
+import com.m000gg.plugins.servicesubscription.domain.SubscriptionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.csrfInput;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.escape;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatInstant;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatPrice;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.parseUuid;
 
@@ -29,7 +36,7 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         this.subscriptionService = Objects.requireNonNull(subscriptionService, "subscriptionService");
     }
 
-    @Override // own Spring MVC Router
+    @Override
     public PluginPageResponse handle(PluginPageRequest request) {
         Objects.requireNonNull(request, "request");
 
@@ -46,24 +53,37 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
                 case "/services/create" -> handleCreate(request);
                 case "/services/update" -> handleUpdate(request);
                 case "/services/delete" -> handleDelete(request);
+                case "/subscriptions/cancel" -> handleAdminCancelSubscription(request);
                 default -> PluginPageResponse.notFound();
             };
         }
 
         return PluginPageResponse.notFound();
     }
-    // build HTML page (own Spring MVC) and return as PluginPageResponse (title, body, stylesheets & script)
+
     private PluginPageResponse renderCatalog(PluginPageRequest request) {
         List<Service> services = subscriptionService.listAllServices();
+        List<Subscription> subscriptions = subscriptionService.listAllSubscriptions();
+
+        Map<UUID, Service> servicesById = new HashMap<>();
+        for (Service service : services) {
+            servicesById.put(service.id(), service);
+        }
+
+        Set<UUID> subscriberIds = subscriptions.stream()
+                .map(Subscription::subscriberId)
+                .collect(Collectors.toSet());
+        Map<UUID, String> emailsById = subscriptionService.findSubscriberEmails(subscriberIds);
+
         String statusFlag = request.parameter("status").orElse(null);
 
         StringBuilder html = new StringBuilder();
         html.append("<div class=\"sub-admin\">");
-        html.append("<div class=\"sub-admin__header\">");
-        html.append("<div>");
-        html.append("<h1 class=\"sub-admin__title\">{{i18n:admin.title}}</h1>");
-        html.append("<p class=\"sub-admin__subtitle\">{{i18n:admin.subtitle}}</p>");
-        html.append("</div>");
+
+        html.append("<div class=\"page-header\">");
+        html.append("<p class=\"eyebrow\">{{i18n:admin.eyebrow}}</p>");
+        html.append("<h1>{{i18n:admin.title}}</h1>");
+        html.append("<p class=\"page-subtitle\">{{i18n:admin.subtitle}}</p>");
         html.append("</div>");
 
         appendBanner(html, statusFlag);
@@ -106,14 +126,15 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         html.append("</section>");
 
         // Catalog table card
-        html.append("<section class=\"sub-admin__card\">");
+        html.append("<section class=\"table-card sub-admin__table-section\">");
+        html.append("<div class=\"sub-admin__table-header\">");
         html.append("<h2 class=\"sub-admin__card-title\">{{i18n:admin.catalog.heading}}</h2>");
+        html.append("</div>");
 
         if (services.isEmpty()) {
             html.append("<p class=\"sub-admin__empty\">{{i18n:admin.catalog.empty}}</p>");
         } else {
-            html.append("<div class=\"sub-admin__table-wrap\">");
-            html.append("<table class=\"sub-admin__table\">");
+            html.append("<table class=\"user-table\">");
             html.append("<thead><tr>");
             html.append("<th>{{i18n:field.name}}</th>");
             html.append("<th>{{i18n:field.price}}</th>");
@@ -124,7 +145,7 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
 
             for (Service service : services) {
                 boolean active = service.serviceStatus() == ServiceStatus.ACTIVE;
-                html.append("<tr>");
+                html.append("<tr").append(active ? "" : " class=\"row-deleted\"").append(">");
                 html.append("<td>");
                 html.append("<div class=\"sub-admin__svc-name\">").append(escape(service.name())).append("</div>");
                 if (!service.description().isBlank()) {
@@ -137,8 +158,8 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
                         .append(escape(formatPrice(service.price())))
                         .append(" / {{i18n:unit.month}}</td>");
                 html.append("<td>").append(service.minPeriods()).append("</td>");
-                html.append("<td><span class=\"sub-admin__badge ")
-                        .append(active ? "sub-admin__badge--active" : "sub-admin__badge--deleted")
+                html.append("<td><span class=\"status-badge ")
+                        .append(active ? "status-active" : "status-inactive")
                         .append("\">")
                         .append(active ? "{{i18n:status.service.active}}" : "{{i18n:status.service.deleted}}")
                         .append("</span></td>");
@@ -164,11 +185,90 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
                 html.append("</tr>");
             }
 
-            html.append("</tbody></table></div>");
+            html.append("</tbody></table>");
         }
-
         html.append("</section>");
         html.append("</div>");
+
+        // All plugin subscriptions table
+        html.append("<section class=\"table-card sub-admin__table-section\">");
+        html.append("<div class=\"sub-admin__table-header\">");
+        html.append("<h2 class=\"sub-admin__card-title\">{{i18n:admin.subs.heading}}</h2>");
+        html.append("</div>");
+
+        if (subscriptions.isEmpty()) {
+            html.append("<p class=\"sub-admin__empty\">{{i18n:admin.subs.empty}}</p>");
+        } else {
+            html.append("<table class=\"user-table\">");
+            html.append("<thead><tr>");
+            html.append("<th>{{i18n:admin.subs.id}}</th>");
+            html.append("<th>{{i18n:admin.subs.subscriber}}</th>");
+            html.append("<th>{{i18n:admin.subs.service}}</th>");
+            html.append("<th>{{i18n:field.status}}</th>");
+            html.append("<th>{{i18n:admin.subs.started}}</th>");
+            html.append("<th>{{i18n:admin.subs.nextOrEnds}}</th>");
+            html.append("<th>{{i18n:admin.subs.minTermEnds}}</th>");
+            html.append("<th>{{i18n:admin.subs.period}}</th>");
+            html.append("<th>{{i18n:field.actions}}</th>");
+            html.append("</tr></thead><tbody>");
+
+            for (Subscription sub : subscriptions) {
+                String shortId = sub.id().toString().substring(0, 8) + "…";
+                String email = emailsById.get(sub.subscriberId());
+                String subscriberLabel = email != null
+                        ? email
+                        : sub.subscriberId().toString().substring(0, 8) + "…";
+                Service svc = servicesById.get(sub.serviceId());
+                String serviceName = svc != null ? svc.name() : sub.serviceId().toString();
+
+                Instant nextOrEnds = (sub.cancelAtPeriodEnd() || sub.status() == SubscriptionStatus.CANCELED)
+                        ? sub.endsAt()
+                        : sub.nextBillingAt();
+
+                html.append("<tr")
+                        .append(sub.status() == SubscriptionStatus.CANCELED ? " class=\"row-deleted\"" : "")
+                        .append(">");
+                html.append("<td><span class=\"id-cell\" title=\"")
+                        .append(escape(sub.id().toString())).append("\">")
+                        .append(escape(shortId)).append("</span></td>");
+                html.append("<td><a class=\"table-link\" href=\"/admin/users/profile/")
+                        .append(escape(sub.subscriberId().toString())).append("\">")
+                        .append(escape(subscriberLabel)).append("</a></td>");
+                html.append("<td>").append(escape(serviceName)).append("</td>");
+                html.append("<td><span class=\"status-badge ")
+                        .append(subscriptionBadgeClass(sub.status()))
+                        .append("\">")
+                        .append(subscriptionStatusI18n(sub.status()))
+                        .append("</span>");
+                if (sub.status() == SubscriptionStatus.ACTIVE && sub.cancelAtPeriodEnd()) {
+                    html.append(" <span class=\"sub-admin__tag\">{{i18n:admin.subs.canceling}}</span>");
+                }
+                html.append("</td>");
+                html.append("<td class=\"sub-admin__mono\">").append(escape(formatInstant(sub.startedAt()))).append("</td>");
+                html.append("<td class=\"sub-admin__mono\">").append(escape(formatInstant(nextOrEnds))).append("</td>");
+                html.append("<td class=\"sub-admin__mono\">").append(escape(formatInstant(sub.minTermEndsAt()))).append("</td>");
+                html.append("<td>#").append(sub.nextPeriodNo()).append("</td>");
+                html.append("<td><div class=\"sub-admin__actions\">");
+                if ((sub.status() == SubscriptionStatus.ACTIVE && !sub.cancelAtPeriodEnd())
+                        || sub.status() == SubscriptionStatus.SUSPENDED) {
+                    html.append("<form method=\"post\" action=\"")
+                            .append(BASE_PATH).append("/subscriptions/cancel\">");
+                    html.append(csrfInput(request));
+                    html.append("<input type=\"hidden\" name=\"subscriptionId\" value=\"")
+                            .append(escape(sub.id().toString())).append("\">");
+                    html.append("<button class=\"sub-admin__btn sub-admin__btn--danger\" type=\"submit\">");
+                    html.append("{{i18n:client.action.cancel}}");
+                    html.append("</button></form>");
+                } else {
+                    html.append("<span class=\"sub-admin__muted\">—</span>");
+                }
+                html.append("</div></td>");
+                html.append("</tr>");
+            }
+
+            html.append("</tbody></table>");
+        }
+        html.append("</section>");
         html.append("</div>");
 
         return PluginPageResponse.html(
@@ -194,10 +294,11 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
 
         StringBuilder html = new StringBuilder();
         html.append("<div class=\"sub-admin\">");
-        html.append("<div class=\"sub-admin__header\">");
-        html.append("<div>");
-        html.append("<h1 class=\"sub-admin__title\">{{i18n:admin.edit.heading}}</h1>");
-        html.append("<p class=\"sub-admin__subtitle\">").append(escape(service.name())).append("</p>");
+        html.append("<div class=\"sub-admin__top-row\">");
+        html.append("<div class=\"page-header\">");
+        html.append("<p class=\"eyebrow\">{{i18n:admin.eyebrow}}</p>");
+        html.append("<h1>{{i18n:admin.edit.heading}}</h1>");
+        html.append("<p class=\"page-subtitle\">").append(escape(service.name())).append("</p>");
         html.append("</div>");
         html.append("<a class=\"sub-admin__btn sub-admin__btn--ghost\" href=\"")
                 .append(BASE_PATH).append("/\">{{i18n:action.back}}</a>");
@@ -294,6 +395,32 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         }
     }
 
+    private PluginPageResponse handleAdminCancelSubscription(PluginPageRequest request) {
+        try {
+            UUID subscriptionId = parseUuid(request.parameter("subscriptionId").orElse(null));
+            subscriptionService.cancelSubscription(subscriptionId, Instant.now());
+            return PluginPageResponse.redirect("/?status=sub_canceled");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return PluginPageResponse.redirect("/?status=invalid_input");
+        }
+    }
+
+    private static String subscriptionBadgeClass(SubscriptionStatus status) {
+        return switch (status) {
+            case ACTIVE -> "status-active";
+            case SUSPENDED -> "status-suspended";
+            case CANCELED -> "status-inactive";
+        };
+    }
+
+    private static String subscriptionStatusI18n(SubscriptionStatus status) {
+        return switch (status) {
+            case ACTIVE -> "{{i18n:status.sub.active}}";
+            case SUSPENDED -> "{{i18n:status.sub.suspended}}";
+            case CANCELED -> "{{i18n:status.sub.canceled}}";
+        };
+    }
+
     private static void appendBanner(StringBuilder html, String statusFlag) {
         if (statusFlag == null || statusFlag.isBlank()) {
             return;
@@ -304,6 +431,7 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
             case "created" -> key = "{{i18n:admin.msg.created}}";
             case "updated" -> key = "{{i18n:admin.msg.updated}}";
             case "deleted" -> key = "{{i18n:admin.msg.deleted}}";
+            case "sub_canceled" -> key = "{{i18n:admin.msg.subCanceled}}";
             case "invalid_input" -> {
                 key = "{{i18n:msg.invalidInput}}";
                 error = true;

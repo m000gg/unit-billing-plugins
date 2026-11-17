@@ -89,6 +89,13 @@ public final class SubscriptionRepository {
         );
     }
 
+    public List<Subscription> findAll() {
+        return db.query(
+                SELECT_COLUMNS + " ORDER BY created_at DESC",
+                SubscriptionRepository::mapRow
+        );
+    }
+
     public boolean update(Subscription subscription, Instant now) {
         Objects.requireNonNull(subscription, "subscription");
         Objects.requireNonNull(now, "now");

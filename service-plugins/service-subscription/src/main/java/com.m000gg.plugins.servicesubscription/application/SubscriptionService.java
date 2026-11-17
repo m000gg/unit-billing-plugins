@@ -5,6 +5,7 @@ import com.m000gg.plugin.api.command.balance.ChargeRequest;
 import com.m000gg.plugin.api.command.balance.ChargeResult;
 import com.m000gg.plugin.api.command.balance.ChargeStatus;
 import com.m000gg.plugin.api.db.PluginDatabase;
+import com.m000gg.plugin.api.query.user.UserContact;
 import com.m000gg.plugin.api.query.user.UserDirectory;
 import com.m000gg.plugins.servicesubscription.domain.*;
 import com.m000gg.plugins.servicesubscription.infrastructure.ServiceRepository;
@@ -15,7 +16,10 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -372,6 +376,23 @@ public final class SubscriptionService {
     public List<Subscription> findSubscriptionsBySubscriber(UUID subscriberId) {
         Objects.requireNonNull(subscriberId, "subscriberId");
         return subscriptionRepository.findBySubscriberId(subscriberId);
+    }
+
+    public List<Subscription> listAllSubscriptions() {
+        return subscriptionRepository.findAll();
+    }
+
+    public Map<UUID, String> findSubscriberEmails(Collection<UUID> subscriberIds) {
+        Objects.requireNonNull(subscriberIds, "subscriberIds");
+        Map<UUID, String> emails = new HashMap<>();
+        for (UUID subscriberId : subscriberIds) {
+            if (subscriberId != null && !emails.containsKey(subscriberId)) {
+                users.findContact(subscriberId)
+                        .map(UserContact::email)
+                        .ifPresent(email -> emails.put(subscriberId, email));
+            }
+        }
+        return emails;
     }
 
     public List<SubscriptionCharge> findChargesBySubscription(UUID subscriptionId) {
