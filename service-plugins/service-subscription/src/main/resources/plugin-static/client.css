@@ -1,0 +1,207 @@
+.sub-client {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.sub-client__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sub-client__header--row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sub-client__title {
+    margin: 0;
+    font-family: var(--font-display, "Inter", sans-serif);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--ink, #14171F);
+}
+
+.sub-client__subtitle {
+    margin: 0;
+    color: var(--ink-soft, #5B606B);
+    font-size: 14px;
+}
+
+.sub-client__section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.sub-client__section-title {
+    margin: 0;
+    font-family: var(--font-display, "Inter", sans-serif);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink, #14171F);
+}
+
+.sub-client__list,
+.sub-client__catalog {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.sub-client__card {
+    background: var(--surface, #FFFFFF);
+    border: 1px solid var(--line, #E4E4DF);
+    border-radius: var(--radius, 10px);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sub-client__card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.sub-client__name {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink, #14171F);
+}
+
+.sub-client__desc {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft, #5B606B);
+}
+
+.sub-client__price {
+    font-family: var(--font-mono, monospace);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent, #2F5D50);
+}
+
+.sub-client__meta,
+.sub-client__catalog-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink-soft, #5B606B);
+}
+
+.sub-client__warn {
+    color: var(--danger, #B3261E);
+    font-weight: 500;
+}
+
+.sub-client__badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sub-client__badge--active {
+    background: var(--accent-soft, #E4EFEA);
+    color: var(--accent-strong, #21453B);
+}
+
+.sub-client__badge--suspended {
+    background: #FDECEA;
+    color: var(--danger, #B3261E);
+}
+
+.sub-client__badge--canceled {
+    background: #EDEDEA;
+    color: var(--ink-soft, #5B606B);
+}
+
+.sub-client__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.sub-client__actions form {
+    margin: 0;
+}
+
+.sub-client__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.sub-client__btn--primary {
+    background: var(--accent, #2F5D50);
+    color: #fff;
+}
+
+.sub-client__btn--ghost {
+    background: var(--accent-soft, #E4EFEA);
+    color: var(--accent-strong, #21453B);
+}
+
+.sub-client__btn--danger {
+    background: #FDECEA;
+    color: var(--danger, #B3261E);
+}
+
+.sub-client__alert {
+    padding: 12px 16px;
+    border-radius: var(--radius, 10px);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.sub-client__alert--success {
+    background: var(--accent-soft, #E4EFEA);
+    color: var(--accent-strong, #21453B);
+}
+
+.sub-client__alert--error {
+    background: #FDECEA;
+    color: var(--danger, #B3261E);
+}
+
+.sub-client__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.sub-client__table th,
+.sub-client__table td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line, #E4E4DF);
+}
+
+.sub-client__mono {
+    font-family: var(--font-mono, monospace);
+}
+
+.sub-client__empty {
+    margin: 0;
+    color: var(--ink-soft, #5B606B);
+    font-size: 14px;
+}
