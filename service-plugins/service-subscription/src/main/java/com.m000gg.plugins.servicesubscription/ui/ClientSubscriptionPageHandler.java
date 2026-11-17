@@ -78,8 +78,9 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
         StringBuilder html = new StringBuilder();
         html.append("<div class=\"sub-client\">");
         html.append("<div class=\"sub-client__header\">");
-        html.append("<h1 class=\"sub-client__title\">{{i18n:client.title}}</h1>");
-        html.append("<p class=\"sub-client__subtitle\">{{i18n:client.subtitle}}</p>");
+        html.append("<p class=\"statement__eyebrow\">{{i18n:client.eyebrow}}</p>");
+        html.append("<h1 class=\"statement__title\">{{i18n:client.title}}</h1>");
+        html.append("<p class=\"statement__sub sub-client__sub\">{{i18n:client.subtitle}}</p>");
         html.append("</div>");
 
         appendBanner(html, request.parameter("status").orElse(null));
@@ -106,7 +107,7 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                         .append(escape(priceText))
                         .append(" / {{i18n:unit.month}}</div>");
                 html.append("</div>");
-                html.append("<span class=\"sub-client__badge ")
+                html.append("<span class=\"ledger-row__type-badge ")
                         .append(statusBadgeClass(sub.status()))
                         .append("\">")
                         .append(statusI18n(sub.status()))
@@ -116,12 +117,18 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                 html.append("<div class=\"sub-client__meta\">");
                 if (sub.status() == SubscriptionStatus.ACTIVE) {
                     if (sub.cancelAtPeriodEnd()) {
-                        html.append("<span>{{i18n:client.sub.endsAt}}: ")
+                        html.append("<span>{{i18n:client.sub.endsAt}}: <strong>")
                                 .append(escape(formatInstant(sub.endsAt())))
-                                .append("</span>");
+                                .append("</strong></span>");
                     } else {
-                        html.append("<span>{{i18n:client.sub.nextBilling}}: ")
+                        html.append("<span>{{i18n:client.sub.nextBilling}}: <strong>")
                                 .append(escape(formatInstant(sub.nextBillingAt())))
+                                .append("</strong></span>");
+                    }
+                    if (sub.minTermEndsAt() != null && sub.startedAt() != null
+                            && sub.minTermEndsAt().isAfter(sub.startedAt())) {
+                        html.append("<span>{{i18n:client.sub.minTermEnds}}: ")
+                                .append(escape(formatInstant(sub.minTermEndsAt())))
                                 .append("</span>");
                     }
                 } else if (sub.status() == SubscriptionStatus.SUSPENDED) {
@@ -133,25 +140,25 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                 }
                 html.append("</div>");
 
-                html.append("<div class=\"sub-client__actions\">");
-                html.append("<a class=\"sub-client__btn sub-client__btn--ghost\" href=\"")
-                        .append(BASE_PATH).append("/charges?subscriptionId=")
-                        .append(escape(sub.id().toString()))
-                        .append("\">{{i18n:client.action.charges}}</a>");
-
                 if (sub.status() == SubscriptionStatus.SUSPENDED) {
-                    html.append("<form method=\"post\" action=\"")
+                    html.append("<form class=\"sub-client__subscribe-form\" method=\"post\" action=\"")
                             .append(BASE_PATH).append("/subscribe\">");
                     html.append(csrfInput(request));
                     html.append("<input type=\"hidden\" name=\"serviceId\" value=\"")
                             .append(escape(sub.serviceId().toString())).append("\">");
+                    appendLegalConsent(html, svc != null ? svc.minPeriods() : 0);
+                    html.append("<div class=\"sub-client__actions\">");
+                    html.append("<a class=\"sub-client__btn sub-client__btn--ghost\" href=\"")
+                            .append(BASE_PATH).append("/charges?subscriptionId=")
+                            .append(escape(sub.id().toString()))
+                            .append("\">{{i18n:client.action.charges}}</a>");
                     html.append("<button class=\"sub-client__btn sub-client__btn--primary\" type=\"submit\">");
                     html.append("{{i18n:client.action.retryPay}}");
-                    html.append("</button></form>");
-                }
+                    html.append("</button>");
+                    html.append("</div>");
+                    html.append("</form>");
 
-                if ((sub.status() == SubscriptionStatus.ACTIVE && !sub.cancelAtPeriodEnd())
-                        || sub.status() == SubscriptionStatus.SUSPENDED) {
+                    html.append("<div class=\"sub-client__actions\">");
                     html.append("<form method=\"post\" action=\"")
                             .append(BASE_PATH).append("/cancel\">");
                     html.append(csrfInput(request));
@@ -160,9 +167,26 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                     html.append("<button class=\"sub-client__btn sub-client__btn--danger\" type=\"submit\">");
                     html.append("{{i18n:client.action.cancel}}");
                     html.append("</button></form>");
-                }
+                    html.append("</div>");
+                } else {
+                    html.append("<div class=\"sub-client__actions\">");
+                    html.append("<a class=\"sub-client__btn sub-client__btn--ghost\" href=\"")
+                            .append(BASE_PATH).append("/charges?subscriptionId=")
+                            .append(escape(sub.id().toString()))
+                            .append("\">{{i18n:client.action.charges}}</a>");
 
-                html.append("</div>");
+                    if (sub.status() == SubscriptionStatus.ACTIVE && !sub.cancelAtPeriodEnd()) {
+                        html.append("<form method=\"post\" action=\"")
+                                .append(BASE_PATH).append("/cancel\">");
+                        html.append(csrfInput(request));
+                        html.append("<input type=\"hidden\" name=\"subscriptionId\" value=\"")
+                                .append(escape(sub.id().toString())).append("\">");
+                        html.append("<button class=\"sub-client__btn sub-client__btn--danger\" type=\"submit\">");
+                        html.append("{{i18n:client.action.cancel}}");
+                        html.append("</button></form>");
+                    }
+                    html.append("</div>");
+                }
                 html.append("</article>");
             }
             html.append("</div>");
@@ -194,19 +218,20 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                 if (service.minPeriods() > 0) {
                     html.append("<span class=\"sub-client__term\">{{i18n:field.minPeriods}}: ")
                             .append(service.minPeriods())
-                            .append("</span>");
+                            .append(" {{i18n:unit.month}}</span>");
                 }
                 html.append("</div>");
 
                 if (existingLive != null && existingLive.status() == SubscriptionStatus.ACTIVE) {
-                    html.append("<span class=\"sub-client__badge sub-client__badge--active\">")
+                    html.append("<span class=\"ledger-row__type-badge sub-client__badge--active\">")
                             .append("{{i18n:client.catalog.alreadyActive}}</span>");
                 } else {
-                    html.append("<form method=\"post\" action=\"")
+                    html.append("<form class=\"sub-client__subscribe-form\" method=\"post\" action=\"")
                             .append(BASE_PATH).append("/subscribe\">");
                     html.append(csrfInput(request));
                     html.append("<input type=\"hidden\" name=\"serviceId\" value=\"")
                             .append(escape(service.id().toString())).append("\">");
+                    appendLegalConsent(html, service.minPeriods());
                     html.append("<button class=\"sub-client__btn sub-client__btn--primary\" type=\"submit\">");
                     html.append(existingLive != null
                             ? "{{i18n:client.action.retryPay}}"
@@ -253,16 +278,20 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
         html.append("<div class=\"sub-client\">");
         html.append("<div class=\"sub-client__header sub-client__header--row\">");
         html.append("<div>");
-        html.append("<h1 class=\"sub-client__title\">{{i18n:client.charges.heading}}</h1>");
-        html.append("<p class=\"sub-client__subtitle\">").append(escape(serviceName)).append("</p>");
+        html.append("<p class=\"statement__eyebrow\">{{i18n:client.eyebrow}}</p>");
+        html.append("<h1 class=\"statement__title\">{{i18n:client.charges.heading}}</h1>");
+        html.append("<p class=\"statement__sub sub-client__sub\">").append(escape(serviceName)).append("</p>");
         html.append("</div>");
         html.append("<a class=\"sub-client__btn sub-client__btn--ghost\" href=\"")
                 .append(BASE_PATH).append("/\">{{i18n:action.back}}</a>");
         html.append("</div>");
 
-        html.append("<div class=\"sub-client__card\">");
+        html.append("<div class=\"ledger\">");
+        html.append("<div class=\"ledger__header\">");
+        html.append("<h2 class=\"ledger__title\">{{i18n:client.charges.heading}}</h2>");
+        html.append("</div>");
         if (charges.isEmpty()) {
-            html.append("<p class=\"sub-client__empty\">{{i18n:client.charges.empty}}</p>");
+            html.append("<div class=\"ledger__empty\">{{i18n:client.charges.empty}}</div>");
         } else {
             html.append("<table class=\"sub-client__table\">");
             html.append("<thead><tr>");
@@ -275,14 +304,14 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
             for (SubscriptionCharge charge : charges) {
                 boolean ok = charge.status() == SubscriptionChargeStatus.SUCCESS;
                 html.append("<tr>");
-                html.append("<td>#").append(charge.periodNo()).append("</td>");
+                html.append("<td class=\"sub-client__mono\">#").append(charge.periodNo()).append("</td>");
                 html.append("<td class=\"sub-client__mono\">").append(escape(formatPrice(charge.amount()))).append("</td>");
-                html.append("<td><span class=\"sub-client__badge ")
+                html.append("<td><span class=\"ledger-row__type-badge ")
                         .append(ok ? "sub-client__badge--active" : "sub-client__badge--suspended")
                         .append("\">")
                         .append(ok ? "{{i18n:status.charge.success}}" : "{{i18n:status.charge.failed}}")
                         .append("</span></td>");
-                html.append("<td>").append(escape(formatInstant(charge.attemptedAt()))).append("</td>");
+                html.append("<td class=\"sub-client__mono\">").append(escape(formatInstant(charge.attemptedAt()))).append("</td>");
                 html.append("</tr>");
             }
             html.append("</tbody></table>");
@@ -299,6 +328,10 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
     }
 
     private PluginPageResponse handleSubscribe(PluginPageRequest request) {
+        if (!"true".equals(request.parameter("termsAccepted").orElse(""))) {
+            return PluginPageResponse.redirect("/?status=terms_required");
+        }
+
         try {
             UUID serviceId = parseUuid(request.parameter("serviceId").orElse(null));
             Subscription subscription = subscriptionService.subscribeAndActivate(
@@ -332,6 +365,26 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
         }
     }
 
+    private static void appendLegalConsent(StringBuilder html, int minPeriods) {
+        html.append("<div class=\"sub-client__legal\">");
+        html.append("<p class=\"sub-client__legal-text\">");
+        html.append("{{i18n:client.legal.recurring}} ");
+        if (minPeriods > 0) {
+            html.append("{{i18n:client.legal.minTermPrefix}} <strong>")
+                    .append(minPeriods)
+                    .append(" {{i18n:unit.month}}</strong>. ");
+        } else {
+            html.append("{{i18n:client.legal.noMinTerm}} ");
+        }
+        html.append("{{i18n:client.legal.cancellation}}");
+        html.append("</p>");
+        html.append("<label class=\"sub-client__checkbox\">");
+        html.append("<input type=\"checkbox\" name=\"termsAccepted\" value=\"true\" required>");
+        html.append("<span>{{i18n:client.legal.checkbox}}</span>");
+        html.append("</label>");
+        html.append("</div>");
+    }
+
     private static String statusBadgeClass(SubscriptionStatus status) {
         return switch (status) {
             case ACTIVE -> "sub-client__badge--active";
@@ -359,6 +412,10 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
             case "canceled" -> key = "{{i18n:client.msg.canceled}}";
             case "insufficient_funds" -> {
                 key = "{{i18n:client.msg.insufficientFunds}}";
+                error = true;
+            }
+            case "terms_required" -> {
+                key = "{{i18n:client.msg.termsRequired}}";
                 error = true;
             }
             case "error" -> {

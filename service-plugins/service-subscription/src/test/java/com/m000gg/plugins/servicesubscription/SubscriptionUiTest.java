@@ -53,19 +53,45 @@ class SubscriptionUiTest {
     }
 
     @Test
-    void adminPageEscapesHtmlAndHandlesCreateRedirect() {
+    void adminPageEscapesHtmlHandlesCreateAndRendersAllSubscriptions() {
         CapturingUi ui = new CapturingUi();
+        UUID subscriberId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UUID subId = UUID.randomUUID();
+
         RowView xssService = row(Map.of(
-                "id", UUID.randomUUID(),
+                "id", serviceId,
                 "name", "<script>alert(1)</script>",
                 "description", "<b>desc</b>",
                 "price", new BigDecimal("12.00"),
                 "status", ServiceStatus.ACTIVE.name(),
-                "min_periods", 1,
+                "min_periods", 3,
                 "period_unit", "MONTH"
         ));
+        RowView activeSub = row(Map.ofEntries(
+                Map.entry("id", subId),
+                Map.entry("subscriber_id", subscriberId),
+                Map.entry("service_id", serviceId),
+                Map.entry("status", SubscriptionStatus.ACTIVE.name()),
+                Map.entry("started_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("min_term_ends_at", Instant.parse("2027-02-01T00:00:00Z")),
+                Map.entry("anchor_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("periods_since_anchor", 1),
+                Map.entry("next_period_no", 2),
+                Map.entry("next_billing_at", Instant.parse("2026-12-01T00:00:00Z")),
+                Map.entry("cancel_at_period_end", false),
+                Map.entry("version", 0L)
+        ));
+
         ServiceSubscriptionPlugin plugin = new ServiceSubscriptionPlugin();
-        plugin.onEnable(contextWith(new StubDatabase(List.of(xssService)), id -> Optional.empty(), req -> null, ui));
+        plugin.onEnable(contextWith(
+                new TableAwareStubDatabase(List.of(xssService), List.of(activeSub)),
+                id -> id.equals(subscriberId)
+                        ? Optional.of(new UserContact("sub@example.com", "en"))
+                        : Optional.empty(),
+                req -> null,
+                ui
+        ));
 
         try {
             PluginPageResponse getResponse = ui.adminHandler.handle(pageRequest("GET", "/", UUID.randomUUID(), Map.of()));
@@ -75,6 +101,8 @@ class SubscriptionUiTest {
             assertThat(html.body()).contains("&lt;script&gt;alert(1)&lt;/script&gt;");
             assertThat(html.body()).doesNotContain("<script>alert(1)</script>");
             assertThat(html.body()).contains("name=\"_csrf\" value=\"tok-123\"");
+            assertThat(html.body()).contains("{{i18n:admin.subs.heading}}");
+            assertThat(html.body()).contains("sub@example.com");
 
             PluginPageResponse postResponse = ui.adminHandler.handle(pageRequest(
                     "POST",
@@ -88,6 +116,64 @@ class SubscriptionUiTest {
                     )
             ));
             assertThat(postResponse).isEqualTo(PluginPageResponse.redirect("/?status=created"));
+
+            PluginPageResponse cancelResp = ui.adminHandler.handle(pageRequest(
+                    "POST",
+                    "/subscriptions/cancel",
+                    UUID.randomUUID(),
+                    Map.of("subscriptionId", List.of(subId.toString()))
+            ));
+            assertThat(cancelResp).isEqualTo(PluginPageResponse.redirect("/?status=sub_canceled"));
+        } finally {
+            plugin.onDisable();
+        }
+    }
+
+    @Test
+    void clientPageRequiresLegalCheckboxOnSubscribe() {
+        CapturingUi ui = new CapturingUi();
+        UUID userId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+
+        RowView svcRow = row(Map.of(
+                "id", serviceId,
+                "name", "Fiber 100",
+                "description", "Fast internet",
+                "price", new BigDecimal("25.00"),
+                "status", ServiceStatus.ACTIVE.name(),
+                "min_periods", 12,
+                "period_unit", "MONTH"
+        ));
+
+        ServiceSubscriptionPlugin plugin = new ServiceSubscriptionPlugin();
+        plugin.onEnable(contextWith(
+                new TableAwareStubDatabase(List.of(svcRow), List.of()),
+                id -> Optional.of(new UserContact("a@b.c", "en")),
+                req -> new ChargeResult(ChargeStatus.SUCCESS, UUID.randomUUID()),
+                ui
+        ));
+
+        try {
+            PluginPageResponse.Html home = (PluginPageResponse.Html) ui.clientHandler.handle(
+                    pageRequest("GET", "/", userId, Map.of()));
+            assertThat(home.body()).contains("name=\"termsAccepted\"");
+            assertThat(home.body()).contains("{{i18n:client.legal.checkbox}}");
+
+            PluginPageResponse rejected = ui.clientHandler.handle(pageRequest(
+                    "POST", "/subscribe", userId, Map.of("serviceId", List.of(serviceId.toString()))
+            ));
+            assertThat(rejected).isEqualTo(PluginPageResponse.redirect("/?status=terms_required"));
+
+            PluginPageResponse accepted = ui.clientHandler.handle(pageRequest(
+                    "POST",
+                    "/subscribe",
+                    userId,
+                    Map.of(
+                            "serviceId", List.of(serviceId.toString()),
+                            "termsAccepted", List.of("true")
+                    )
+            ));
+            assertThat(accepted).isEqualTo(PluginPageResponse.redirect("/?status=activated"));
         } finally {
             plugin.onDisable();
         }
@@ -275,6 +361,43 @@ class SubscriptionUiTest {
         @Override
         public <T> Optional<T> queryOne(String sql, RowMapper<T> mapper, Object... params) {
             return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(mapper.map(rows.getFirst()));
+        }
+
+        @Override
+        public int execute(String sql, Object... params) {
+            return 1;
+        }
+
+        @Override
+        public <T> T inTransaction(Supplier<T> action) {
+            return action.get();
+        }
+
+        @Override
+        public void inTransaction(Runnable action) {
+            action.run();
+        }
+    }
+
+    private static final class TableAwareStubDatabase implements PluginDatabase {
+        private final List<RowView> serviceRows;
+        private final List<RowView> subscriptionRows;
+
+        private TableAwareStubDatabase(List<RowView> serviceRows, List<RowView> subscriptionRows) {
+            this.serviceRows = serviceRows;
+            this.subscriptionRows = subscriptionRows;
+        }
+
+        @Override
+        public <T> List<T> query(String sql, RowMapper<T> mapper, Object... params) {
+            List<RowView> source = sql.contains("FROM service") ? serviceRows : subscriptionRows;
+            return source.stream().map(mapper::map).toList();
+        }
+
+        @Override
+        public <T> Optional<T> queryOne(String sql, RowMapper<T> mapper, Object... params) {
+            List<RowView> source = sql.contains("FROM service") ? serviceRows : subscriptionRows;
+            return source.isEmpty() ? Optional.empty() : Optional.ofNullable(mapper.map(source.getFirst()));
         }
 
         @Override
