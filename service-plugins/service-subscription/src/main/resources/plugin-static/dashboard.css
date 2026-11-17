@@ -1,0 +1,25 @@
+.sub-dash {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.sub-dash__text {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft, #5B606B);
+}
+
+.sub-dash__btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--accent, #2F5D50);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
