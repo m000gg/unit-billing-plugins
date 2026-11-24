@@ -17,6 +17,8 @@ public class EmailSender {
 
         props.put("mail.smtp.host", smtpServerConfiguration.host());
         props.put("mail.smtp.port", String.valueOf(smtpServerConfiguration.port()));
+        props.put("mail.smtp.ssl.enable",
+                String.valueOf(smtpServerConfiguration.sslEnabled()));
         props.put("mail.smtp.starttls.enable",
                 String.valueOf(smtpServerConfiguration.startTlsEnabled()));
         props.put("mail.smtp.starttls.required",
