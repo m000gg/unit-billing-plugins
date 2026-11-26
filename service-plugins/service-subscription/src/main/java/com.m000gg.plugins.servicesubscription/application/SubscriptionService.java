@@ -104,17 +104,8 @@ public final class SubscriptionService {
         ));
 
         return db.inTransaction(() -> {
+            recordChargeAttempt(subscription, periodNo, now, service.price(), chargeResult, now);
             if (chargeResult.status() == ChargeStatus.SUCCESS) {
-                chargeRepository.insert(new SubscriptionCharge(
-                        UUID.randomUUID(),
-                        subscription.id(),
-                        periodNo,
-                        now,
-                        service.price(),
-                        SubscriptionChargeStatus.SUCCESS,
-                        chargeResult.ledgerEntryId(),
-                        now
-                ));
                 if (subscription.neverPaid()) {
                     subscription.activate(now, service.minPeriods());
                 } else {
@@ -123,17 +114,6 @@ public final class SubscriptionService {
                 if (!subscriptionRepository.update(subscription, now)) {
                     throw new IllegalStateException("Concurrent update on subscription " + subscription.id());
                 }
-            } else {
-                chargeRepository.insert(new SubscriptionCharge(
-                        UUID.randomUUID(),
-                        subscription.id(),
-                        periodNo,
-                        now,
-                        service.price(),
-                        SubscriptionChargeStatus.FAILED,
-                        null,
-                        now
-                ));
             }
             return subscription;
         });
@@ -247,29 +227,10 @@ public final class SubscriptionService {
         ));
 
         db.inTransaction(() -> {
+            recordChargeAttempt(subscription, periodNo, periodStart, service.price(), chargeResult, now);
             if (chargeResult.status() == ChargeStatus.SUCCESS) {
-                chargeRepository.insert(new SubscriptionCharge(
-                        UUID.randomUUID(),
-                        subscription.id(),
-                        periodNo,
-                        periodStart,
-                        service.price(),
-                        SubscriptionChargeStatus.SUCCESS,
-                        chargeResult.ledgerEntryId(),
-                        now
-                ));
                 subscription.recordPayment();
             } else {
-                chargeRepository.insert(new SubscriptionCharge(
-                        UUID.randomUUID(),
-                        subscription.id(),
-                        periodNo,
-                        periodStart,
-                        service.price(),
-                        SubscriptionChargeStatus.FAILED,
-                        null,
-                        now
-                ));
                 subscription.suspend();
             }
 
@@ -332,17 +293,8 @@ public final class SubscriptionService {
         ));
 
         return db.inTransaction(() -> {
+            recordChargeAttempt(subscription, periodNo, now, service.price(), chargeResult, now);
             if (chargeResult.status() == ChargeStatus.SUCCESS) {
-                chargeRepository.insert(new SubscriptionCharge(
-                        UUID.randomUUID(),
-                        subscription.id(),
-                        periodNo,
-                        now,
-                        service.price(),
-                        SubscriptionChargeStatus.SUCCESS,
-                        chargeResult.ledgerEntryId(),
-                        now
-                ));
                 if (subscription.neverPaid()) {
                     subscription.activate(now, service.minPeriods());
                 } else {
@@ -353,17 +305,6 @@ public final class SubscriptionService {
                 }
                 return true;
             }
-
-            chargeRepository.insert(new SubscriptionCharge(
-                    UUID.randomUUID(),
-                    subscription.id(),
-                    periodNo,
-                    now,
-                    service.price(),
-                    SubscriptionChargeStatus.FAILED,
-                    null,
-                    now
-            ));
             return false;
         });
     }
@@ -398,5 +339,44 @@ public final class SubscriptionService {
     public List<SubscriptionCharge> findChargesBySubscription(UUID subscriptionId) {
         Objects.requireNonNull(subscriptionId, "subscriptionId");
         return chargeRepository.findBySubscriptionId(subscriptionId);
+    }
+
+    private void recordChargeAttempt(
+            Subscription subscription,
+            int periodNo,
+            Instant periodStart,
+            BigDecimal baseAmount,
+            ChargeResult chargeResult,
+            Instant attemptedAt
+    ) {
+        if (chargeResult.status() == ChargeStatus.SUCCESS) {
+            chargeRepository.insert(new SubscriptionCharge(
+                    UUID.randomUUID(),
+                    subscription.id(),
+                    periodNo,
+                    periodStart,
+                    baseAmount,
+                    chargeResult.chargedAmount(),
+                    chargeResult.chargedCurrency(),
+                    chargeResult.exchangeRate(),
+                    SubscriptionChargeStatus.SUCCESS,
+                    chargeResult.ledgerEntryId(),
+                    attemptedAt
+            ));
+        } else {
+            chargeRepository.insert(new SubscriptionCharge(
+                    UUID.randomUUID(),
+                    subscription.id(),
+                    periodNo,
+                    periodStart,
+                    baseAmount,
+                    null,
+                    null,
+                    null,
+                    SubscriptionChargeStatus.FAILED,
+                    null,
+                    attemptedAt
+            ));
+        }
     }
 }

@@ -1,5 +1,9 @@
 package com.m000gg.plugins.servicesubscription.ui;
 
+import com.m000gg.plugin.api.query.fx.ExchangeRate;
+import com.m000gg.plugin.api.query.fx.ExchangeRateDirectory;
+import com.m000gg.plugin.api.query.user.UserContact;
+import com.m000gg.plugin.api.query.user.UserDirectory;
 import com.m000gg.plugin.api.ui.PluginPageHandler;
 import com.m000gg.plugin.api.ui.PluginPageRequest;
 import com.m000gg.plugin.api.ui.PluginPageResponse;
@@ -11,27 +15,43 @@ import com.m000gg.plugins.servicesubscription.domain.SubscriptionCharge;
 import com.m000gg.plugins.servicesubscription.domain.SubscriptionChargeStatus;
 import com.m000gg.plugins.servicesubscription.domain.SubscriptionStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.csrfInput;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.escape;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatInstant;
-import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatPrice;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatMoney;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatPriceForUser;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.normalizeCurrency;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.parseUuid;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.resolveBaseCurrency;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.safeFindRate;
 
 public final class ClientSubscriptionPageHandler implements PluginPageHandler {
 
     private static final String BASE_PATH = "/client/plugins/" + PluginId.VALUE;
 
     private final SubscriptionService subscriptionService;
+    private final UserDirectory users;
+    private final ExchangeRateDirectory exchangeRates;
 
     public ClientSubscriptionPageHandler(SubscriptionService subscriptionService) {
+        this(subscriptionService, null, null);
+    }
+
+    public ClientSubscriptionPageHandler(SubscriptionService subscriptionService,
+                                         UserDirectory users,
+                                         ExchangeRateDirectory exchangeRates) {
         this.subscriptionService = Objects.requireNonNull(subscriptionService, "subscriptionService");
+        this.users = users;
+        this.exchangeRates = exchangeRates;
     }
 
     @Override
@@ -75,6 +95,10 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
             }
         }
 
+        String baseCurrency = resolveBaseCurrency(exchangeRates);
+        String userCurrency = resolveUserCurrency(request.userId());
+        ExchangeRate userQuote = safeFindRate(exchangeRates, baseCurrency, userCurrency).orElse(null);
+
         StringBuilder html = new StringBuilder();
         html.append("<div class=\"sub-client\">");
         html.append("<div class=\"sub-client__header\">");
@@ -97,15 +121,14 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
             for (Subscription sub : subscriptions) {
                 Service svc = servicesById.get(sub.serviceId());
                 String serviceName = svc != null ? svc.name() : sub.serviceId().toString();
-                String priceText = svc != null ? formatPrice(svc.price()) : "—";
 
                 html.append("<article class=\"sub-client__card\">");
                 html.append("<div class=\"sub-client__card-head\">");
                 html.append("<div>");
                 html.append("<h3 class=\"sub-client__name\">").append(escape(serviceName)).append("</h3>");
-                html.append("<div class=\"sub-client__price\">")
-                        .append(escape(priceText))
-                        .append(" / {{i18n:unit.month}}</div>");
+                html.append("<div class=\"sub-client__price\">");
+                appendClientPrice(html, svc != null ? svc.price() : null, baseCurrency, userQuote, userCurrency);
+                html.append(" / {{i18n:unit.month}}</div>");
                 html.append("</div>");
                 html.append("<span class=\"ledger-row__type-badge ")
                         .append(statusBadgeClass(sub.status()))
@@ -212,9 +235,9 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
                             .append(escape(service.description())).append("</p>");
                 }
                 html.append("<div class=\"sub-client__catalog-meta\">");
-                html.append("<span class=\"sub-client__price\">")
-                        .append(escape(formatPrice(service.price())))
-                        .append(" / {{i18n:unit.month}}</span>");
+                html.append("<span class=\"sub-client__price\">");
+                appendClientPrice(html, service.price(), baseCurrency, userQuote, userCurrency);
+                html.append(" / {{i18n:unit.month}}</span>");
                 if (service.minPeriods() > 0) {
                     html.append("<span class=\"sub-client__term\">{{i18n:field.minPeriods}}: ")
                             .append(service.minPeriods())
@@ -301,11 +324,19 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
             html.append("<th>{{i18n:client.charges.date}}</th>");
             html.append("</tr></thead><tbody>");
 
+            String baseCurrency = resolveBaseCurrency(exchangeRates);
+            String userCurrency = resolveUserCurrency(request.userId());
+            ExchangeRate userQuote = safeFindRate(exchangeRates, baseCurrency, userCurrency).orElse(null);
             for (SubscriptionCharge charge : charges) {
                 boolean ok = charge.status() == SubscriptionChargeStatus.SUCCESS;
+                String priceDisplay = charge.hasChargedSnapshot()
+                        ? formatMoney(charge.chargedAmount(), charge.chargedCurrency())
+                        : formatPriceForUser(charge.amount(), baseCurrency, userQuote, userCurrency);
                 html.append("<tr>");
                 html.append("<td class=\"sub-client__mono\">#").append(charge.periodNo()).append("</td>");
-                html.append("<td class=\"sub-client__mono\">").append(escape(formatPrice(charge.amount()))).append("</td>");
+                html.append("<td class=\"sub-client__mono\">")
+                        .append(escape(priceDisplay))
+                        .append("</td>");
                 html.append("<td><span class=\"ledger-row__type-badge ")
                         .append(ok ? "sub-client__badge--active" : "sub-client__badge--suspended")
                         .append("\">")
@@ -429,5 +460,29 @@ public final class ClientSubscriptionPageHandler implements PluginPageHandler {
         html.append("<div class=\"sub-client__alert ")
                 .append(error ? "sub-client__alert--error" : "sub-client__alert--success")
                 .append("\">").append(key).append("</div>");
+    }
+
+    private String resolveUserCurrency(UUID userId) {
+        if (users == null || userId == null) {
+            return null;
+        }
+        Optional<UserContact> contact;
+        try {
+            contact = users.findContact(userId);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+        if (contact == null || contact.isEmpty()) {
+            return null;
+        }
+        return normalizeCurrency(contact.get().userCurrency());
+    }
+
+    private static void appendClientPrice(StringBuilder html,
+                                          BigDecimal basePrice,
+                                          String baseCurrency,
+                                          ExchangeRate quote,
+                                          String userCurrency) {
+        html.append(escape(formatPriceForUser(basePrice, baseCurrency, quote, userCurrency)));
     }
 }

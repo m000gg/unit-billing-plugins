@@ -9,7 +9,9 @@ import com.m000gg.plugin.api.db.PluginDatabase;
 import com.m000gg.plugin.api.db.RowMapper;
 import com.m000gg.plugin.api.db.RowView;
 import com.m000gg.plugin.api.event.BalanceChanged;
+import com.m000gg.plugin.api.query.fx.ExchangeRateDirectory;
 import com.m000gg.plugin.api.query.settings.PluginSettings;
+import com.m000gg.plugin.api.spi.fx.ExchangeRateProvider;
 import com.m000gg.plugin.api.query.user.UserContact;
 import com.m000gg.plugin.api.query.user.UserDirectory;
 import com.m000gg.plugin.api.ui.ClientDashboardSection;
@@ -71,9 +73,15 @@ class ServiceSubscriptionPersistenceTest {
         ));
 
         RecordingPluginDatabase db = new RecordingPluginDatabase(serviceRow);
-        UserDirectory users = id -> Optional.of(new UserContact("user@example.com", "en"));
+        UserDirectory users = id -> Optional.of(new UserContact("user@example.com", "en", "UAH"));
         RecordingBalanceCharger charger = new RecordingBalanceCharger(
-                new ChargeResult(ChargeStatus.SUCCESS, ledgerEntryId)
+                new ChargeResult(
+                        ChargeStatus.SUCCESS,
+                        ledgerEntryId,
+                        new BigDecimal("414.59"),
+                        "UAH",
+                        new BigDecimal("41.50")
+                )
         );
 
         ServiceSubscriptionPlugin plugin = new ServiceSubscriptionPlugin();
@@ -86,6 +94,13 @@ class ServiceSubscriptionPersistenceTest {
         assertThat(result.startedAt()).isEqualTo(now);
         assertThat(db.executedSql).hasSize(3);
         assertThat(db.executedSql).noneMatch(sql -> sql.contains("core.") || sql.contains("public."));
+        assertThat(db.executedSql.get(1)).contains("INSERT INTO subscription_charge");
+        assertThat(db.executedParams.get(1)).contains(
+                new BigDecimal("9.99"),
+                new BigDecimal("414.59"),
+                "UAH",
+                new BigDecimal("41.50")
+        );
         assertThat(charger.requests).hasSize(1);
         assertThat(charger.requests.getFirst().subscriberId()).isEqualTo(subscriberId);
         assertThat(charger.requests.getFirst().amount()).isEqualByComparingTo("9.99");
@@ -221,6 +236,26 @@ class ServiceSubscriptionPersistenceTest {
             public PluginDatabase database() {
                 return db;
             }
+
+            @Override
+            public ExchangeRateDirectory exchangeRates() {
+                return new ExchangeRateDirectory() {
+                    @Override
+                    public String baseCurrency() {
+                        return "USD";
+                    }
+
+                    @Override
+                    public Optional<com.m000gg.plugin.api.query.fx.ExchangeRate> findRate(
+                            String fromCurrency, String toCurrency) {
+                        return Optional.empty();
+                    }
+                };
+            }
+
+            @Override
+            public void registerExchangeRateProvider(ExchangeRateProvider provider) {
+            }
         };
     }
 
@@ -242,6 +277,7 @@ class ServiceSubscriptionPersistenceTest {
     private static final class RecordingPluginDatabase implements PluginDatabase {
         private final RowView singleRow;
         private final List<String> executedSql = new ArrayList<>();
+        private final List<Object[]> executedParams = new ArrayList<>();
         private int transactions;
 
         private RecordingPluginDatabase() {
@@ -271,6 +307,7 @@ class ServiceSubscriptionPersistenceTest {
         @Override
         public int execute(String sql, Object... params) {
             executedSql.add(sql);
+            executedParams.add(params);
             return 1;
         }
 

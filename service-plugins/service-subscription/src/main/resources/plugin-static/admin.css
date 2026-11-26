@@ -356,3 +356,47 @@
     color: var(--text-secondary);
     font-size: 14px;
 }
+
+.sub-admin__fx-card {
+    padding: 18px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sub-admin__fx-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sub-admin__fx-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.sub-admin__fx-rates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.sub-admin__fx-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg, #f8fafc);
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
