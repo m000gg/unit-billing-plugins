@@ -43,6 +43,7 @@
     <modules>
         <module>notification-plugins/email-notifier</module>
         <module>service-plugins/service-subscription</module>
+        <module>fx-plugins/nbu-exchange-rate</module>
     </modules>
 
     <!-- ===================== SHARED DEPENDENCIES ===================== -->
