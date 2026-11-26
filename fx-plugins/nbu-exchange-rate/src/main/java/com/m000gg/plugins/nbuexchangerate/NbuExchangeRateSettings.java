@@ -28,8 +28,9 @@ public record NbuExchangeRateSettings(
     public NbuExchangeRateSettings {
         Objects.requireNonNull(apiUri, "apiUri must not be null");
         String scheme = apiUri.getScheme();
-        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-            throw new IllegalArgumentException("api-url must use http or https: " + apiUri);
+        if ((!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))
+                || apiUri.getHost() == null || apiUri.getHost().isBlank()) {
+            throw new IllegalArgumentException("api-url must be an HTTP(S) URL with a host: " + apiUri);
         }
         requirePositive(refreshInterval, "refreshInterval");
         requirePositive(connectTimeout, "connectTimeout");

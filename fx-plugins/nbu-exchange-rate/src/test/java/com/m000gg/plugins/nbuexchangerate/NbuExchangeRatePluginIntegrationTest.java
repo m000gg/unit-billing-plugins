@@ -102,7 +102,13 @@ class NbuExchangeRatePluginIntegrationTest {
         assertThat(defaults.cacheTtl()).isEqualTo(Duration.ofSeconds(86400));
 
         assertThatIllegalArgumentException().isThrownBy(() ->
-                NbuExchangeRateSettings.from(stubContext(Map.of("api-url", "ftp://invalid"), new AtomicReference<>())));
+                NbuExchangeRateSettings.from(stubContext(Map.of("api-url", "ftp://invalid.example.com"), new AtomicReference<>())));
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                NbuExchangeRateSettings.from(stubContext(Map.of("api-url", "http:invalid"), new AtomicReference<>())));
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                NbuExchangeRateSettings.from(stubContext(Map.of("api-url", "https:///path"), new AtomicReference<>())));
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                NbuExchangeRateSettings.from(stubContext(Map.of("api-url", "https://"), new AtomicReference<>())));
         assertThatIllegalArgumentException().isThrownBy(() ->
                 NbuExchangeRateSettings.from(stubContext(Map.of("cache-ttl-seconds", "0"), new AtomicReference<>())));
         assertThatIllegalArgumentException().isThrownBy(() ->
