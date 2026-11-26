@@ -5,6 +5,7 @@ import com.m000gg.plugin.api.PluginContext;
 import com.m000gg.plugin.api.command.balance.BalanceCharger;
 import com.m000gg.plugin.api.db.PluginDatabase;
 import com.m000gg.plugin.api.event.BalanceChangeDirection;
+import com.m000gg.plugin.api.query.fx.ExchangeRateDirectory;
 import com.m000gg.plugin.api.query.user.UserDirectory;
 import com.m000gg.plugins.servicesubscription.application.SubscriptionService;
 import com.m000gg.plugins.servicesubscription.domain.PluginId;
@@ -39,6 +40,7 @@ public final class ServiceSubscriptionPlugin implements Plugin {
         PluginDatabase db = Objects.requireNonNull(context.database(), "context.database()");
         UserDirectory users = Objects.requireNonNull(context.users(), "users");
         BalanceCharger balanceCharger = Objects.requireNonNull(context.balanceCharger(), "context.balanceCharger()");
+        ExchangeRateDirectory exchangeRates = Objects.requireNonNull(context.exchangeRates(), "context.exchangeRates()");
 
         ServiceRepository serviceRepository = new ServiceRepository(db);
         SubscriptionRepository subscriptionRepository = new SubscriptionRepository(db);
@@ -64,8 +66,8 @@ public final class ServiceSubscriptionPlugin implements Plugin {
         this.billingScheduler.start();
 
         context.ui().registerAdminNavigation("{{i18n:admin.nav}}", "📦");
-        context.ui().registerAdminPages(new AdminSubscriptionPageHandler(this.subscriptionService));
-        context.ui().registerClientPages(new ClientSubscriptionPageHandler(this.subscriptionService));
+        context.ui().registerAdminPages(new AdminSubscriptionPageHandler(this.subscriptionService, exchangeRates));
+        context.ui().registerClientPages(new ClientSubscriptionPageHandler(this.subscriptionService, users, exchangeRates));
         context.ui().registerClientDashboardSection(new SubscriptionsDashboardSection());
 
         log.info("Service subscription plugin enabled");

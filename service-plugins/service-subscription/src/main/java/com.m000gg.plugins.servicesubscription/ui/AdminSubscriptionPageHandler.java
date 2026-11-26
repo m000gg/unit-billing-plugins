@@ -1,5 +1,7 @@
 package com.m000gg.plugins.servicesubscription.ui;
 
+import com.m000gg.plugin.api.query.fx.ExchangeRate;
+import com.m000gg.plugin.api.query.fx.ExchangeRateDirectory;
 import com.m000gg.plugin.api.ui.PluginPageHandler;
 import com.m000gg.plugin.api.ui.PluginPageRequest;
 import com.m000gg.plugin.api.ui.PluginPageResponse;
@@ -13,9 +15,11 @@ import com.m000gg.plugins.servicesubscription.domain.SubscriptionStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -23,17 +27,28 @@ import java.util.stream.Collectors;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.csrfInput;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.escape;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatInstant;
-import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatPrice;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatMoney;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.formatRate;
 import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.parseUuid;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.resolveBaseCurrency;
+import static com.m000gg.plugins.servicesubscription.ui.HtmlSupport.safeFindRate;
 
 public final class AdminSubscriptionPageHandler implements PluginPageHandler {
 
     private static final String BASE_PATH = "/admin/plugins/" + PluginId.VALUE;
+    private static final List<String> FX_PREVIEW_CURRENCIES = List.of("USD", "EUR", "UAH", "GBP", "PLN");
 
     private final SubscriptionService subscriptionService;
+    private final ExchangeRateDirectory exchangeRates;
 
     public AdminSubscriptionPageHandler(SubscriptionService subscriptionService) {
+        this(subscriptionService, null);
+    }
+
+    public AdminSubscriptionPageHandler(SubscriptionService subscriptionService,
+                                        ExchangeRateDirectory exchangeRates) {
         this.subscriptionService = Objects.requireNonNull(subscriptionService, "subscriptionService");
+        this.exchangeRates = exchangeRates;
     }
 
     @Override
@@ -80,6 +95,8 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         StringBuilder html = new StringBuilder();
         html.append("<div class=\"sub-admin\">");
 
+        String baseCurrency = resolveBaseCurrency(exchangeRates);
+
         html.append("<div class=\"page-header\">");
         html.append("<p class=\"eyebrow\">{{i18n:admin.eyebrow}}</p>");
         html.append("<h1>{{i18n:admin.title}}</h1>");
@@ -87,6 +104,7 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         html.append("</div>");
 
         appendBanner(html, statusFlag);
+        appendExchangeRatesCard(html, baseCurrency);
 
         html.append("<div class=\"sub-admin__grid\">");
 
@@ -109,7 +127,9 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
 
         html.append("<div class=\"sub-admin__row\">");
         html.append("<label class=\"sub-admin__field\">");
-        html.append("<span>{{i18n:field.price}}</span>");
+        html.append("<span>{{i18n:field.price}}")
+                .append(baseCurrency != null ? " (" + escape(baseCurrency) + ")" : "")
+                .append("</span>");
         html.append("<input type=\"number\" name=\"price\" step=\"0.0001\" min=\"0.0001\" required>");
         html.append("</label>");
 
@@ -137,7 +157,9 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
             html.append("<table class=\"user-table\">");
             html.append("<thead><tr>");
             html.append("<th>{{i18n:field.name}}</th>");
-            html.append("<th>{{i18n:field.price}}</th>");
+            html.append("<th>{{i18n:field.price}}")
+                    .append(baseCurrency != null ? " (" + escape(baseCurrency) + ")" : "")
+                    .append("</th>");
             html.append("<th>{{i18n:field.minPeriods}}</th>");
             html.append("<th>{{i18n:field.status}}</th>");
             html.append("<th>{{i18n:field.actions}}</th>");
@@ -155,7 +177,7 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
                 }
                 html.append("</td>");
                 html.append("<td class=\"sub-admin__mono\">")
-                        .append(escape(formatPrice(service.price())))
+                        .append(escape(formatMoney(service.price(), baseCurrency)))
                         .append(" / {{i18n:unit.month}}</td>");
                 html.append("<td>").append(service.minPeriods()).append("</td>");
                 html.append("<td><span class=\"status-badge ")
@@ -325,11 +347,14 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
                 .append(escape(service.description())).append("</textarea>");
         html.append("</label>");
 
+        String baseCurrency = resolveBaseCurrency(exchangeRates);
         html.append("<div class=\"sub-admin__row\">");
         html.append("<label class=\"sub-admin__field\">");
-        html.append("<span>{{i18n:field.price}}</span>");
+        html.append("<span>{{i18n:field.price}}")
+                .append(baseCurrency != null ? " (" + escape(baseCurrency) + ")" : "")
+                .append("</span>");
         html.append("<input type=\"text\" disabled value=\"")
-                .append(escape(formatPrice(service.price()))).append("\">");
+                .append(escape(formatMoney(service.price(), baseCurrency))).append("\">");
         html.append("</label>");
 
         html.append("<label class=\"sub-admin__field\">");
@@ -443,5 +468,58 @@ public final class AdminSubscriptionPageHandler implements PluginPageHandler {
         html.append("<div class=\"sub-admin__alert ")
                 .append(error ? "sub-admin__alert--error" : "sub-admin__alert--success")
                 .append("\">").append(key).append("</div>");
+    }
+
+    private void appendExchangeRatesCard(StringBuilder html, String baseCurrency) {
+        Map<String, ExchangeRate> quotes = new LinkedHashMap<>();
+        if (baseCurrency != null && exchangeRates != null) {
+            for (String target : FX_PREVIEW_CURRENCIES) {
+                if (target.equals(baseCurrency)) {
+                    continue;
+                }
+                Optional<ExchangeRate> quote = safeFindRate(exchangeRates, baseCurrency, target);
+                quote.ifPresent(rate -> quotes.put(target, rate));
+            }
+        }
+
+        html.append("<section class=\"sub-admin__card sub-admin__fx-card\">");
+        html.append("<div class=\"sub-admin__fx-head\">");
+        html.append("<h2 class=\"sub-admin__card-title\">{{i18n:admin.fx.heading}}</h2>");
+        html.append("<div class=\"sub-admin__fx-meta\">");
+        html.append("<span>{{i18n:admin.fx.baseCurrency}}: <strong>")
+                .append(baseCurrency != null ? escape(baseCurrency) : "—")
+                .append("</strong></span>");
+        if (!quotes.isEmpty()) {
+            ExchangeRate sample = quotes.values().iterator().next();
+            if (sample.source() != null && !sample.source().isBlank()) {
+                html.append("<span>{{i18n:admin.fx.source}}: <strong>")
+                        .append(escape(sample.source()))
+                        .append("</strong></span>");
+            }
+            if (sample.fetchedAt() != null) {
+                html.append("<span>{{i18n:admin.fx.updated}}: ")
+                        .append(escape(formatInstant(sample.fetchedAt())))
+                        .append("</span>");
+            }
+        }
+        html.append("</div>");
+        html.append("</div>");
+
+        if (quotes.isEmpty()) {
+            html.append("<p class=\"sub-admin__muted\" style=\"margin:0\">{{i18n:admin.fx.unavailable}}</p>");
+        } else {
+            html.append("<div class=\"sub-admin__fx-rates\">");
+            for (Map.Entry<String, ExchangeRate> entry : quotes.entrySet()) {
+                html.append("<span class=\"sub-admin__fx-chip\">1 ")
+                        .append(escape(baseCurrency))
+                        .append(" = ")
+                        .append(escape(formatRate(entry.getValue().rate())))
+                        .append(" ")
+                        .append(escape(entry.getKey()))
+                        .append("</span>");
+            }
+            html.append("</div>");
+        }
+        html.append("</section>");
     }
 }

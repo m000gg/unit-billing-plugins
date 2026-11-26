@@ -9,7 +9,10 @@ import com.m000gg.plugin.api.db.PluginDatabase;
 import com.m000gg.plugin.api.db.RowMapper;
 import com.m000gg.plugin.api.db.RowView;
 import com.m000gg.plugin.api.event.BalanceChanged;
+import com.m000gg.plugin.api.query.fx.ExchangeRate;
+import com.m000gg.plugin.api.query.fx.ExchangeRateDirectory;
 import com.m000gg.plugin.api.query.settings.PluginSettings;
+import com.m000gg.plugin.api.spi.fx.ExchangeRateProvider;
 import com.m000gg.plugin.api.query.user.UserContact;
 import com.m000gg.plugin.api.query.user.UserDirectory;
 import com.m000gg.plugin.api.ui.ClientDashboardSection;
@@ -224,6 +227,245 @@ class SubscriptionUiTest {
         }
     }
 
+    @Test
+    void clientPageShowsConvertedPriceWhenExchangeRateAvailable() {
+        CapturingUi ui = new CapturingUi();
+        UUID userId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UUID subId = UUID.randomUUID();
+
+        RowView svcRow = row(Map.of(
+                "id", serviceId,
+                "name", "Cloud VPS",
+                "description", "Fast VPS",
+                "price", new BigDecimal("10.00"),
+                "status", ServiceStatus.ACTIVE.name(),
+                "min_periods", 1,
+                "period_unit", "MONTH"
+        ));
+        RowView activeSub = row(Map.ofEntries(
+                Map.entry("id", subId),
+                Map.entry("subscriber_id", userId),
+                Map.entry("service_id", serviceId),
+                Map.entry("status", SubscriptionStatus.ACTIVE.name()),
+                Map.entry("started_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("min_term_ends_at", Instant.parse("2026-12-01T00:00:00Z")),
+                Map.entry("anchor_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("periods_since_anchor", 1),
+                Map.entry("next_period_no", 2),
+                Map.entry("next_billing_at", Instant.parse("2026-12-01T00:00:00Z")),
+                Map.entry("cancel_at_period_end", false),
+                Map.entry("version", 0L)
+        ));
+
+        RowView snapshotChargeRow = row(Map.ofEntries(
+                Map.entry("id", UUID.randomUUID()),
+                Map.entry("subscription_id", subId),
+                Map.entry("period_no", 1),
+                Map.entry("period_start", Instant.parse("2026-10-01T00:00:00Z")),
+                Map.entry("amount", new BigDecimal("10.00")),
+                Map.entry("charged_amount", new BigDecimal("15.30")),
+                Map.entry("charged_currency", "GBP"),
+                Map.entry("exchange_rate", new BigDecimal("1.53")),
+                Map.entry("status", "SUCCESS"),
+                Map.entry("ledger_entry_id", UUID.randomUUID()),
+                Map.entry("attempted_at", Instant.parse("2026-10-01T00:00:00Z"))
+        ));
+        RowView legacyChargeRow = row(Map.of(
+                "id", UUID.randomUUID(),
+                "subscription_id", subId,
+                "period_no", 2,
+                "period_start", Instant.parse("2026-11-01T00:00:00Z"),
+                "amount", new BigDecimal("10.00"),
+                "status", "SUCCESS",
+                "ledger_entry_id", UUID.randomUUID(),
+                "attempted_at", Instant.parse("2026-11-01T00:00:00Z")
+        ));
+
+        ExchangeRateDirectory fx = new ExchangeRateDirectory() {
+            @Override
+            public String baseCurrency() {
+                return "USD";
+            }
+
+            @Override
+            public Optional<ExchangeRate> findRate(String fromCurrency, String toCurrency) {
+                if ("USD".equals(fromCurrency) && "UAH".equals(toCurrency)) {
+                    return Optional.of(new ExchangeRate(
+                            new BigDecimal("41.50"),
+                            "nbu-exchange-rate",
+                            Instant.parse("2026-11-26T10:00:00Z")));
+                }
+                return Optional.empty();
+            }
+        };
+
+        ServiceSubscriptionPlugin plugin = new ServiceSubscriptionPlugin();
+        plugin.onEnable(contextWith(
+                new TableAwareStubDatabase(
+                        List.of(svcRow),
+                        List.of(activeSub),
+                        List.of(snapshotChargeRow, legacyChargeRow)),
+                id -> Optional.of(new UserContact("a@b.c", "en", "UAH")),
+                req -> new ChargeResult(ChargeStatus.SUCCESS, UUID.randomUUID()),
+                ui,
+                fx
+        ));
+
+        try {
+            PluginPageResponse.Html home = (PluginPageResponse.Html) ui.clientHandler.handle(
+                    pageRequest("GET", "/", userId, Map.of()));
+            assertThat(home.body()).contains("415 UAH / {{i18n:unit.month}}");
+            assertThat(home.body()).doesNotContain("USD");
+
+            PluginPageResponse.Html charges = (PluginPageResponse.Html) ui.clientHandler.handle(
+                    pageRequest("GET", "/charges", userId, Map.of("subscriptionId", List.of(subId.toString()))));
+            assertThat(charges.body()).contains("15.3 GBP");
+            assertThat(charges.body()).contains("415 UAH");
+            assertThat(charges.body()).doesNotContain("USD");
+        } finally {
+            plugin.onDisable();
+        }
+    }
+
+    @Test
+    void clientPageFallsBackToBaseCurrencyWhenExchangeRateUnavailable() {
+        CapturingUi ui = new CapturingUi();
+        UUID userId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UUID subId = UUID.randomUUID();
+
+        RowView svcRow = row(Map.of(
+                "id", serviceId,
+                "name", "Cloud VPS",
+                "description", "Fast VPS",
+                "price", new BigDecimal("10.00"),
+                "status", ServiceStatus.ACTIVE.name(),
+                "min_periods", 1,
+                "period_unit", "MONTH"
+        ));
+        RowView activeSub = row(Map.ofEntries(
+                Map.entry("id", subId),
+                Map.entry("subscriber_id", userId),
+                Map.entry("service_id", serviceId),
+                Map.entry("status", SubscriptionStatus.ACTIVE.name()),
+                Map.entry("started_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("min_term_ends_at", Instant.parse("2026-12-01T00:00:00Z")),
+                Map.entry("anchor_at", Instant.parse("2026-11-01T00:00:00Z")),
+                Map.entry("periods_since_anchor", 1),
+                Map.entry("next_period_no", 2),
+                Map.entry("next_billing_at", Instant.parse("2026-12-01T00:00:00Z")),
+                Map.entry("cancel_at_period_end", false),
+                Map.entry("version", 0L)
+        ));
+        RowView chargeRow = row(Map.of(
+                "id", UUID.randomUUID(),
+                "subscription_id", subId,
+                "period_no", 1,
+                "period_start", Instant.parse("2026-11-01T00:00:00Z"),
+                "amount", new BigDecimal("10.00"),
+                "status", "SUCCESS",
+                "ledger_entry_id", UUID.randomUUID(),
+                "attempted_at", Instant.parse("2026-11-01T00:00:00Z")
+        ));
+
+        ServiceSubscriptionPlugin plugin = new ServiceSubscriptionPlugin();
+        plugin.onEnable(contextWith(
+                new TableAwareStubDatabase(List.of(svcRow), List.of(activeSub), List.of(chargeRow)),
+                id -> Optional.of(new UserContact("a@b.c", "en", "UAH")),
+                req -> new ChargeResult(ChargeStatus.SUCCESS, UUID.randomUUID()),
+                ui
+        ));
+
+        try {
+            PluginPageResponse.Html home = (PluginPageResponse.Html) ui.clientHandler.handle(
+                    pageRequest("GET", "/", userId, Map.of()));
+            assertThat(home.body()).contains("10 USD");
+            assertThat(home.body()).doesNotContain("UAH");
+
+            PluginPageResponse.Html charges = (PluginPageResponse.Html) ui.clientHandler.handle(
+                    pageRequest("GET", "/charges", userId, Map.of("subscriptionId", List.of(subId.toString()))));
+            assertThat(charges.body()).contains("10 USD");
+            assertThat(charges.body()).doesNotContain("UAH");
+        } finally {
+            plugin.onDisable();
+        }
+    }
+
+    @Test
+    void adminPageDisplaysBaseCurrencyAndExchangeRates() {
+        CapturingUi ui = new CapturingUi();
+        UUID serviceId = UUID.randomUUID();
+
+        RowView svcRow = row(Map.of(
+                "id", serviceId,
+                "name", "Cloud VPS",
+                "description", "Fast VPS",
+                "price", new BigDecimal("12.00"),
+                "status", ServiceStatus.ACTIVE.name(),
+                "min_periods", 1,
+                "period_unit", "MONTH"
+        ));
+
+        ExchangeRateDirectory fx = new ExchangeRateDirectory() {
+            @Override
+            public String baseCurrency() {
+                return "USD";
+            }
+
+            @Override
+            public Optional<ExchangeRate> findRate(String fromCurrency, String toCurrency) {
+                Instant fetchedAt = Instant.parse("2026-11-26T10:00:00Z");
+                if ("USD".equals(fromCurrency) && "UAH".equals(toCurrency)) {
+                    return Optional.of(new ExchangeRate(new BigDecimal("41.50"), "nbu-exchange-rate", fetchedAt));
+                }
+                if ("USD".equals(fromCurrency) && "EUR".equals(toCurrency)) {
+                    return Optional.of(new ExchangeRate(new BigDecimal("0.92"), "nbu-exchange-rate", fetchedAt));
+                }
+                return Optional.empty();
+            }
+        };
+
+        ServiceSubscriptionPlugin pluginWithFx = new ServiceSubscriptionPlugin();
+        pluginWithFx.onEnable(contextWith(
+                new TableAwareStubDatabase(List.of(svcRow), List.of()),
+                id -> Optional.empty(),
+                req -> null,
+                ui,
+                fx
+        ));
+
+        try {
+            PluginPageResponse.Html html = (PluginPageResponse.Html) ui.adminHandler.handle(
+                    pageRequest("GET", "/", UUID.randomUUID(), Map.of()));
+            assertThat(html.body()).contains("{{i18n:admin.fx.heading}}");
+            assertThat(html.body()).contains("USD");
+            assertThat(html.body()).contains("nbu-exchange-rate");
+            assertThat(html.body()).contains("1 USD = 41.5 UAH");
+            assertThat(html.body()).contains("1 USD = 0.92 EUR");
+            assertThat(html.body()).contains("12 USD / {{i18n:unit.month}}");
+        } finally {
+            pluginWithFx.onDisable();
+        }
+
+        CapturingUi uiWithoutFx = new CapturingUi();
+        ServiceSubscriptionPlugin pluginWithoutFx = new ServiceSubscriptionPlugin();
+        pluginWithoutFx.onEnable(contextWith(
+                new TableAwareStubDatabase(List.of(svcRow), List.of()),
+                id -> Optional.empty(),
+                req -> null,
+                uiWithoutFx
+        ));
+
+        try {
+            PluginPageResponse.Html html = (PluginPageResponse.Html) uiWithoutFx.adminHandler.handle(
+                    pageRequest("GET", "/", UUID.randomUUID(), Map.of()));
+            assertThat(html.body()).contains("{{i18n:admin.fx.unavailable}}");
+        } finally {
+            pluginWithoutFx.onDisable();
+        }
+    }
+
     private static PluginPageRequest pageRequest(
             String method,
             String path,
@@ -287,6 +529,27 @@ class SubscriptionUiTest {
             BalanceCharger charger,
             PluginUi ui
     ) {
+        ExchangeRateDirectory defaultFx = new ExchangeRateDirectory() {
+            @Override
+            public String baseCurrency() {
+                return "USD";
+            }
+
+            @Override
+            public Optional<ExchangeRate> findRate(String fromCurrency, String toCurrency) {
+                return Optional.empty();
+            }
+        };
+        return contextWith(db, users, charger, ui, defaultFx);
+    }
+
+    private static PluginContext contextWith(
+            PluginDatabase db,
+            UserDirectory users,
+            BalanceCharger charger,
+            PluginUi ui,
+            ExchangeRateDirectory exchangeRates
+    ) {
         return new PluginContext() {
             @Override
             public void onBalanceChanged(Consumer<BalanceChanged> handler) {
@@ -315,6 +578,15 @@ class SubscriptionUiTest {
             @Override
             public PluginDatabase database() {
                 return db;
+            }
+
+            @Override
+            public ExchangeRateDirectory exchangeRates() {
+                return exchangeRates;
+            }
+
+            @Override
+            public void registerExchangeRateProvider(ExchangeRateProvider provider) {
             }
         };
     }
@@ -382,22 +654,41 @@ class SubscriptionUiTest {
     private static final class TableAwareStubDatabase implements PluginDatabase {
         private final List<RowView> serviceRows;
         private final List<RowView> subscriptionRows;
+        private final List<RowView> chargeRows;
 
         private TableAwareStubDatabase(List<RowView> serviceRows, List<RowView> subscriptionRows) {
+            this(serviceRows, subscriptionRows, List.of());
+        }
+
+        private TableAwareStubDatabase(
+                List<RowView> serviceRows,
+                List<RowView> subscriptionRows,
+                List<RowView> chargeRows
+        ) {
             this.serviceRows = serviceRows;
             this.subscriptionRows = subscriptionRows;
+            this.chargeRows = chargeRows;
         }
 
         @Override
         public <T> List<T> query(String sql, RowMapper<T> mapper, Object... params) {
-            List<RowView> source = sql.contains("FROM service") ? serviceRows : subscriptionRows;
-            return source.stream().map(mapper::map).toList();
+            return selectRows(sql).stream().map(mapper::map).toList();
         }
 
         @Override
         public <T> Optional<T> queryOne(String sql, RowMapper<T> mapper, Object... params) {
-            List<RowView> source = sql.contains("FROM service") ? serviceRows : subscriptionRows;
+            List<RowView> source = selectRows(sql);
             return source.isEmpty() ? Optional.empty() : Optional.ofNullable(mapper.map(source.getFirst()));
+        }
+
+        private List<RowView> selectRows(String sql) {
+            if (sql.contains("FROM subscription_charge")) {
+                return chargeRows;
+            }
+            if (sql.contains("FROM service")) {
+                return serviceRows;
+            }
+            return subscriptionRows;
         }
 
         @Override

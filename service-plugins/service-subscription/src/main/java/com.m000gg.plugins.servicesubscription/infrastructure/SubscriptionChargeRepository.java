@@ -23,15 +23,19 @@ public final class SubscriptionChargeRepository {
                 """
                 INSERT INTO subscription_charge (
                     id, subscription_id, period_no, period_start, amount,
+                    charged_amount, charged_currency, exchange_rate,
                     status, ledger_entry_id, attempted_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 charge.id(),
                 charge.subscriptionId(),
                 charge.periodNo(),
                 charge.periodStart(),
                 charge.amount(),
+                charge.chargedAmount(),
+                charge.chargedCurrency(),
+                charge.exchangeRate(),
                 charge.status().name(),
                 charge.ledgerEntryId(),
                 charge.attemptedAt()
@@ -43,6 +47,7 @@ public final class SubscriptionChargeRepository {
         return db.query(
                 """
                 SELECT id, subscription_id, period_no, period_start, amount,
+                       charged_amount, charged_currency, exchange_rate,
                        status, ledger_entry_id, attempted_at
                 FROM subscription_charge
                 WHERE subscription_id = ?
@@ -60,6 +65,9 @@ public final class SubscriptionChargeRepository {
                 row.getInt("period_no"),
                 row.getInstant("period_start"),
                 row.getBigDecimal("amount"),
+                row.getBigDecimal("charged_amount"),
+                row.getString("charged_currency"),
+                row.getBigDecimal("exchange_rate"),
                 SubscriptionChargeStatus.valueOf(row.getString("status")),
                 row.getUuid("ledger_entry_id"),
                 row.getInstant("attempted_at")
